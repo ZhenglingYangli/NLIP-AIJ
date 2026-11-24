@@ -8,12 +8,13 @@ from itertools import product
 from pathlib import Path
 import sys
 import unittest
+import importlib.util
 
 ROOT=Path(__file__).resolve().parents[1] / 'jobs'
 sys.path[:0]=[str(ROOT),str(ROOT.parent/'codes'),str(ROOT.parent/'codes/codes')]
 from nlipsat import solve, EncodingConfig
 from tools.verify import verify_values
-from goSolver import methods
+from internal.experiment import methods
 from solvers.baseline.optimization_baselines import solve as baseline
 
 
@@ -28,8 +29,13 @@ def optimum(p):
 class FinalMatrix(unittest.TestCase):
     def test_counts(self):
         counts=[len(methods('decision' if f=='smt' else 'optimization','main',f)) for f in ['qplib','diverse','mipo','smt']]
-        self.assertEqual(counts,[17,17,21,6])
-        self.assertEqual(sum(n*k for n,k in zip([137,108,870,150],counts)),23335)
+        self.assertEqual(counts,[16,16,20,6])
+        expected = {'MAXHS','WMAXCDCL','UWRMAXSAT','EVALMAXRES','SCIP-NATIVE','Z3','CP-SAT','GUROBI'}
+        for family in ('qplib','diverse','mipo'):
+            self.assertEqual({m['solver'] for m in methods('optimization','main',family)}, expected)
+            self.assertTrue(all(not m.get('options',{}).get('use_lrn',False) for m in methods('optimization','main',family)))
+        self.assertEqual({m['solver'] for m in methods('decision','main','smt')}, {'CADICAL','Z3','CVC5'})
+        self.assertEqual(sum(n*k for n,k in zip([137,108,870,150],counts)),22220)
         self.assertEqual([len(methods('optimization','decomposition',f)) for f in ['qplib','diverse','mipo']],[0,0,1])
 
     def test_lrn_end_to_end(self):
@@ -47,6 +53,8 @@ class FinalMatrix(unittest.TestCase):
                     self.assertEqual(bool(result['encoding_stats']['lrn']['applied_groups']),enabled)
         self.assertEqual(p,before)
 
+    @unittest.skipUnless(importlib.util.find_spec('highspy') and importlib.util.find_spec('cplex'),
+                         'optional legacy HiGHS/CPLEX routes are outside the main requirements')
     def test_baselines_against_enumeration(self):
         for sense in ['min','max']:
             for quartic in [False,True]:
@@ -72,6 +80,7 @@ class FinalMatrix(unittest.TestCase):
         self.assertEqual(Fraction(result['objective_value_exact']),optimum(p))
         self.assertEqual(result['encoding_stats']['lrn']['output_residuals'],2)
 
+    @unittest.skipUnless(importlib.util.find_spec('cplex'), 'optional legacy CPLEX route')
     def test_cplex_quadratic_constraints(self):
         p={'variables':{'x':{'lb':-2,'ub':2},'y':{'lb':-2,'ub':2}},
            'objective':{'sense':'max','terms':[{'c':1,'vars':{'x':1}},{'c':1,'vars':{'y':1}}]},

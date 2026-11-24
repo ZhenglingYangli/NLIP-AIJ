@@ -8,9 +8,13 @@ version = "0.2.0"
 description = "Python API wrapper for the NLIPSat research toolkit"
 requires-python = ">=3.9"
 dependencies = [
-    "python-sat[pblib,aiger]",
+    "python-sat[pb]>=1.9.dev17",
+    "pindakaas>=0.6.1",
     "z3-solver",
 ]
+
+[project.scripts]
+nlipsat = "codes.main:main"
 
 [tool.setuptools]
 py-modules = ["telemetry"]

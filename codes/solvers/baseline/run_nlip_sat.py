@@ -54,9 +54,9 @@ def load_problem_for_decision(input_path):
 def sat_backend_name(name):
     name = name.upper()
     if name == "CADICAL":
-        return "cadical195"
+        return "cadical300"
     if name == "GLUCOSE":
-        return "glucose4"
+        return "glucose42"
     raise ValueError(f"Unsupported SAT backend: {name}")
 
 
@@ -68,6 +68,7 @@ def main():
     parser.add_argument("--decomp-threshold", type=int, default=3)
     parser.add_argument("--decomp-strategy", choices=["sequential", "binary_tree"], default="sequential")
     parser.add_argument("--sat-solver", choices=["CADICAL", "GLUCOSE"], required=True)
+    parser.add_argument("--sat-path", default=None, help="CaDiCaL executable; otherwise use the bundled PySAT backend")
     parser.add_argument("--timeout", type=int, default=7200)
     parser.add_argument("--no-preprocess", action="store_true")
     args = parser.parse_args()
@@ -146,9 +147,8 @@ def main():
     backend = sat_backend_name(args.sat_solver)
     status = "UNKNOWN"
     try:
-        with Solver(name=backend, bootstrap_with=wcnf.hard) as sat_solver:
-            sat_res = sat_solver.solve()
-            model = sat_solver.get_model() if sat_res else None
+        from solver.sat import solve_cnf
+        sat_res, model, command = solve_cnf(wcnf.hard, args.sat_solver, args.sat_path or (os.environ.get('NLIP_CADICAL') if args.sat_solver == 'CADICAL' else None))
         status = "SAT" if sat_res else "UNSAT"
     except Exception as e:
         status = "ERROR"

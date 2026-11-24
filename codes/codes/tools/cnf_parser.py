@@ -1,22 +1,9 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-from typing import Dict, Any, List, Tuple, Iterator
+from typing import Dict, Any, List
 
-
-def _iter_dimacs_ints(lines: Iterator[str]) -> Iterator[int]:
-    for line in lines:
-        line = line.strip()
-        if not line or line.startswith('c'):
-            continue
-        if line.startswith('p'):
-            # header handled elsewhere
-            continue
-        for tok in line.split():
-            try:
-                yield int(tok)
-            except Exception:
-                continue
+from .dimacs import iter_dimacs_ints
 
 
 def parse_cnf_file(filepath: str) -> Dict[str, Any]:
@@ -38,7 +25,7 @@ def parse_cnf_file(filepath: str) -> Dict[str, Any]:
                     n_vars = None
             break
 
-    ints = _iter_dimacs_ints(iter(raw_lines))
+    ints = iter_dimacs_ints(iter(raw_lines))
     cur: List[int] = []
     for v in ints:
         if v == 0:

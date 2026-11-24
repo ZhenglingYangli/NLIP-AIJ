@@ -46,26 +46,61 @@ The historical manifests reference these benchmark groups at the input root:
 
 ## Requirements
 
-- Python 3.9 or newer; the AIJ experiment environment uses Python 3.9.
-- [PySAT](https://pysathq.github.io/) with PB support (`python-sat[pblib,aiger]`)
+- Python 3.9 or newer; the current mainline environment uses Python 3.12.
+- [PySAT](https://pysathq.github.io/) with PB support (`python-sat[pb]`) and Pindakaas for the exact-sum encoding
 - Z3 Python bindings (`z3-solver`) for SMT-LIB2 parsing
+
+On the Guangzhou Ubuntu execution host, mainline and formal batch jobs use the same environment,
+`../.venv-solvers/bin/python`, with versions recorded in
+[`../jobs/requirements.txt`](../jobs/requirements.txt). Older dated environment
+exports describe historical runs. Other sites select their actual interpreter in
+`../jobs/config.cluster.json`; the MatriCS checkout historically uses `.venv`.
+See [the site-specific operating guide](../docs/COLLABORATOR_GUIDE.md).
 
 ## Quick Start
 
-Run from the repository root:
+Install this package on Linux from this directory:
 
 ```bash
-python3 codes/main.py path/to/problem.json
+python3 -m venv .venv
+.venv/bin/python -m pip install .
+.venv/bin/nlipsat examples/example4.json --preset mainline --verify
 ```
 
-Examples:
+The example returns `OPTIMAL` with original objective 2 and successful verification.
+The installed command works outside the source directory with an absolute input
+path. `python -m nlipsat` invokes the same command-line implementation.
+RC2 is included through PySAT; external MaxSAT backends are optional.
+For the frozen research environment, install `../jobs/requirements-core.txt`
+before this package. The batch runner and external comparison dependencies
+are separate from the single-instance interface.
+
+Run from this code-package root on the Ubuntu execution host:
 
 ```bash
-python3 codes/main.py "$BENCH_ROOT/qplib_fully_passed/QPLIB_0067.qplib"
-python3 codes/main.py "$BENCH_ROOT/qplib_fully_passed/QPLIB_0067.qplib" -e BIN
-python3 codes/main.py "$BENCH_ROOT/qplib_fully_passed/QPLIB_0067.qplib" -e BIN --decomp
-python3 codes/main.py "$BENCH_ROOT/qplib_fully_passed/QPLIB_0067.qplib" -s RC2 --verify
-python3 codes/main.py "$BENCH_ROOT/diverse_sat/ais/ais10.cnf" --k 2 -e BIN
+NLIP_PYTHON=../.venv-solvers/bin/python
+"$NLIP_PYTHON" codes/main.py path/to/problem.json --preset mainline --verify
+```
+
+`--preset mainline` selects the adopted complete **BIN+D + RC2** method:
+decomposition threshold 3, sequential decomposition, exact multiplication,
+shared substructures, preprocessing and weight-GCD normalization enabled,
+and LRN disabled. Successful solutions are checked against the original problem.
+Timeout, output, verification-report and Diverse-SAT `--k` options remain available.
+Options that change the selected method are rejected with this preset; omit
+`--preset mainline` to run explicit ablations or other solver backends.
+
+The generic CLI retains its historical defaults (OH + RC2, no decomposition),
+and the generic Python API retains its existing defaults. Recent experimental
+lazy, bound-search and interval variants are not part of the mainline preset.
+
+Examples using the same environment:
+
+```bash
+"$NLIP_PYTHON" codes/main.py "$BENCH_ROOT/qplib_fully_passed/QPLIB_0067.qplib" --preset mainline
+"$NLIP_PYTHON" codes/main.py "$BENCH_ROOT/qplib_fully_passed/QPLIB_0067.qplib" -e BIN
+"$NLIP_PYTHON" codes/main.py "$BENCH_ROOT/qplib_fully_passed/QPLIB_0067.qplib" -e UNA -s RC2
+"$NLIP_PYTHON" codes/main.py "$BENCH_ROOT/diverse_sat/ais/ais10.cnf" --k 2 --preset mainline
 ```
 
 ## Python API
@@ -74,29 +109,30 @@ NLIPSat also exposes a small Python API for constructing and inspecting the
 generated WCNF formula object before solving:
 
 ```bash
-python3 -m venv .venv
-. .venv/bin/activate
-pip install -e .
-python3 examples/api_example.py
+"$NLIP_PYTHON" examples/api_example.py
 ```
 
 ```python
-from nlipsat import load_problem, EncodingConfig, \
+from nlipsat import load_problem, mainline_config, MAINLINE_SOLVER, \
                     build_wcnf, solve, verify_solution
 
 problem = load_problem("examples/example4.json")  # .qplib .smt2 .cnf also accepted
-cfg = EncodingConfig()  # use_decomposition=True for order decomp
+cfg = mainline_config()
 
 wcnf, name2idx, vpool = build_wcnf(problem, "BIN", cfg)
 print(len(wcnf.hard), len(wcnf.soft), wcnf.wght, wcnf.topw)
 # 18 4 [1, 2, 2, 4] 10
 
 wcnf.to_file("example.wcnf")
-result = solve(problem, encoding="BIN", config=cfg, solver="RC2")
+result = solve(problem, encoding=cfg.encoding, config=cfg, solver=MAINLINE_SOLVER)
 ok, report = verify_solution(problem, result)
 print(result["objective_value"], ok)
 # 2 True
 ```
+
+`mainline_config()` returns a fresh configuration each time. Formal matrix jobs
+can reuse its BIN+D settings while selecting their registered solver backend
+separately; the preset does not change the experiment matrix.
 
 ### Generate WCNF only (no solving)
 
@@ -120,7 +156,7 @@ QPLIB instances are parsed through `codes/tools/qplib_parser.py`.
 ### SMT-LIB2
 
 SMT2 benchmark files are parsed through `codes/tools/smt2_parser.py`.
-This parser uses `z3-solver` for extracting bounds and constraints, and may skip unsupported assertions (see `--verbose` for parse stats).
+This parser uses `z3-solver` for extracting bounds and constraints. AIJ execution is strict: unsupported assertions and variables requiring artificial finite bounds are rejected. Translations reporting skipped assertions or defaulted bounds are also rejected before encoding.
 
 ### CNF for Diverse-SAT
 
@@ -134,6 +170,7 @@ usage: python3 codes/main.py input [options]
 
 Common options:
 
+- `--preset mainline`: select complete BIN+D + RC2 with exact shared multiplication and LRN disabled
 - `-e, --encoding {OH,UNA,BIN}`: choose the encoding strategy
 - `-s, --solver {RC2,MAXHS,WMAXCDCL,OPENWBO,NONE}`: choose the solver backend (`NONE` = build WCNF only)
 - `--decomp`: enable order decomposition for high-degree terms in binary encoding

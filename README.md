@@ -1,48 +1,37 @@
 # NLIP-AIJ experiment artifact
 
-主实验包含 QPLIB 137、Diverse SAT 108（k=2）、MIPO 870、有界 SMT 150；61 个配置、23,335 次运行。正式实验关闭 LRN，求解预算 3600 秒，外围时限 4000 秒。
+The main matrix contains 1,265 inputs, 58 family/method configurations and 22,220 instance runs. QPLIB, DiverseSAT application models and MIPO compare OH/UNA/BIN, with BIN+D additionally on MIPO, using MaxHS, WMaxCDCL, UWrMaxSAT and EvalMaxRes. Optimization baselines are SCIP-native, Z3, CP-SAT and Gurobi. Bounded SMT uses four encodings with CaDiCaL, plus Z3 and cvc5. LRN is disabled.
 
-```text
-NLIP-Journal-Artifact-/
-├── codes/                 # NLIPSat、编码器和求解器接口
-├── jobs/
-│   ├── goSolver.py        # 跑实例与小测试
-│   ├── generate_scripts.py # 生成批量实验
-│   ├── generate_slurm.py  # 写出 Slurm 提交脚本
-│   ├── test.slurm         # 用 sbatch 提交小测试
-│   ├── config.json       # 路径和运行预算
-│   ├── internal/        # 内部执行与资源控制
-│   ├── data/            # 本地 MIPO 数据转换
-│   ├── tools/           # 环境和路径检查
-│   └── smoke/            # 自带小测试输入
-├── analysis/              # 汇总、统计、画图与精简结果导出
-├── benchmarks/            # 固定清单；MIPO 在目标机器准备
-├── tests/                 # 求解语义与结果统计测试
-└── results/               # 每个批次的原始结果和分析
-```
+Start with the [complete experiment and MatriCS handbook](docs/EXPERIMENT_HANDBOOK.md), covering the matrix, solver versions, source layout, installation and step-by-step operation.
 
-从项目根目录运行：
+## Two operator files
+
+- `jobs/generate_scripts.py` checks dependencies and generates the Slurm campaign and submission script.
+- `jobs/goSolver.py` runs instances, using the shared time/memory supervision and original-problem verification.
+
+This retains the original generator/runner division. Slurm calls `goSolver.py` automatically. The generated `submit.sh` submits the array and dependent analysis and saves both job IDs. Resource supervision and solver dispatch remain internal modules. NLIP parsing, encoding and solving are timed together.
 
 ```bash
-# 在计算节点上跑一个小测试。
-sbatch jobs/test.slurm
-
-# 准备好路径和求解器后，测试全部 61 个配置。
-sbatch --time=00:45:00 jobs/test.slurm all
-
-# 生成正式任务，再提交。
-python jobs/generate_scripts.py
-bash results/main/submit.sh
-
-# 汇总分析。
-python analysis/analyze_campaign.py results/main
+# Select the actual interpreter and configure this machine first.
+export AIJ_PYTHON="$PWD/.venv-solvers/bin/python"
+"$AIJ_PYTHON" jobs/tools/configure_cluster.py
+"$AIJ_PYTHON" jobs/tools/check_environment.py
+"$AIJ_PYTHON" jobs/generate_scripts.py --profile smoke --output results/smoke-new-solvers
+bash results/smoke-new-solvers/submit.sh
+# Inspect the computing-node test log before formal submission.
+"$AIJ_PYTHON" jobs/generate_scripts.py --output results/main-new-solvers
+bash results/main-new-solvers/submit.sh
+sacct -j "$(cat results/main-new-solvers/array_job_id.txt)" --format=JobID,State,ExitCode,Elapsed
 ```
 
-正式默认配置为 bigmem-amd、每作业 60 路、970G，同时只运行 1 个配置作业；每个配置作业申请 1 台节点，每个实例仍为单核心、16 GiB。生成的 submit.sh 自动登记实验结束后的分析作业。
+The formal allocation is bigmem-amd, one exclusive node per configuration, 60 physical cores, 970 GiB and one active configuration at a time. Each instance receives one core, 16 GiB and 3,600 seconds for startup through solving, followed by up to 120 seconds for original-problem verification. The outer cap is 4,000 seconds. Results distinguish optimal, feasible, timeout, memory limit, invalid, license and unsupported outcomes.
 
-- [集群手动操作](docs/COLLABORATOR_GUIDE.md)
-- [实验矩阵、预算和求解语义](jobs/README.md)
+See [solver versions and configuration](docs/SOLVER_VERSIONS.md), [code and experiment overview](docs/CODE_GUIDE.md), [experiment setup](jobs/README.md), [step-by-step cluster handoff](docs/COLLABORATOR_GUIDE.md) and [solver installation and API](codes/README.md).
 
-当前 MatriCS checkout 为 `/scratch/scherif/NLIP/AIJ/NLIP-Journal-Artifact-/`，旧数据和求解器根目录为 `/scratch/scherif/NLIP/NLIP/`。路径可在站点配置中修改。
+## Development and handoff
 
-原始结果位于 `results/<批次>/runs/`，总表为 `results.csv`，旧格式汇总表为 `sumup/`，比较表与图为 `analysis/`。MIPO 使用作者原始整数 TXT 转换得到的 870 个实例。原始数据、运行日志、虚拟环境和许可证不上传 GitHub；精简结果由 `analysis/export_results.py` 导出到 deliveries。
+The Guangzhou development directory is `/home/ubuntu/#科研项目/MIS/3-NLIP_AIJ`. The separate Ubuntu checkout `/home/ubuntu/NLIP-Journal-Artifact-publish` is used to prepare GitHub delivery. Collaborators pull that repository into `/scratch/scherif/NLIP/AIJ/NLIP-Journal-Artifact-` on MatriCS. These are stages of one delivery chain, not separate experiments.
+
+Site-specific `jobs/config.cluster.json`, Python environments, solver binaries, licenses, raw benchmarks and results stay on their respective machines. Synchronizing source code does not copy those site settings. Formal plans must be generated on MatriCS after pulling the intended commit and completing the computing-node checks.
+
+Raw records are under `results/<campaign>/runs/`, the combined table is `results.csv`, legacy-format tables are in `sumup/` and comparisons/plots are in `analysis/`. Historical formal LRN records are not modified by this experiment.

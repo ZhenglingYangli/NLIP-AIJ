@@ -152,6 +152,17 @@ class Interfaces(unittest.TestCase):
             self.assertEqual(result['objective'],oracle(p))
             self.assertIn(result['witness']['x'],[-1,1])
 
+    def test_z3_nonlinear_optimum_matches_enumeration(self):
+        spec = importlib.util.spec_from_file_location('aij_z3_baseline', ROOT/'solvers/baseline/run_z3.py')
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        for sense in ['min', 'max']:
+            p = problem({'x': (-2, 2)}, [term('1/2', x=4), term(-1, x=2)], sense=sense)
+            result = module.solve_qplib(p, 10)
+            self.assertEqual(result['status'], 'OPTIMAL', result)
+            self.assertEqual(result['objective'], oracle(p))
+            self.assertTrue(result['verified'])
+
     def test_original_smt_witness_and_decision_entry(self):
         with tempfile.TemporaryDirectory() as d:
             f = Path(d)/'case.smt2'

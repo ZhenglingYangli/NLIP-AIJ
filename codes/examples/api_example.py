@@ -6,7 +6,7 @@ cfg = EncodingConfig()  # use_decomposition=True for order decomp
 wcnf, name2idx, vpool = build_wcnf(problem, "BIN", cfg)
 print(len(wcnf.hard), len(wcnf.soft), wcnf.wght, wcnf.topw)
 
-wcnf.to_file("example.wcnf")
+wcnf.to_file("example.wcnf", format='legacy')
 result = solve(problem, encoding="BIN", config=cfg, solver="RC2")
 ok, report = verify_solution(problem, result)
 print(result["objective_value"], ok)

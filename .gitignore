@@ -1,11 +1,15 @@
 __pycache__/
 *.py[cod]
-.venv/
+.venv*/
 *.egg-info/
-results/
-benchmarks/mipo/
-
-results/
-sumup/
-benchmarks/mipo/
+/codes/build/
+/codes/dist/
+/results/
+/sumup/
+/solvers/
+/benchmarks/mipo/
 jobs/config.cluster.json
+jobs/config.ubuntu.json
+
+# One-off development diagnostics stay on the development machine.
+/tests/check_*.py

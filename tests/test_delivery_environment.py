@@ -32,6 +32,13 @@ class EnvironmentTests(unittest.TestCase):
         self.assertEqual(len(problems), 1)
         self.assertIn('未自动替换', problems[0])
 
+    def test_missing_top_level_ortools_is_installable(self):
+        with patch.object(environment.metadata, 'version', side_effect=environment.metadata.PackageNotFoundError), \
+             patch.object(environment.importlib, 'import_module', side_effect=ModuleNotFoundError("No module named 'ortools'", name='ortools')):
+            missing, problems = environment.inspect([('ortools', '9.15.6755')])
+        self.assertEqual(missing, ['ortools==9.15.6755'])
+        self.assertEqual(problems, [])
+
     def test_only_missing_package_is_installed(self):
         with patch.object(environment, 'inspect', side_effect=[(['cvc5==1.3.4'], []), ([], [])]), \
              patch.object(environment.subprocess, 'run') as run, \

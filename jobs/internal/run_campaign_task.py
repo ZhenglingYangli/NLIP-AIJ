@@ -1,11 +1,11 @@
 """Execute one configuration from a prepared campaign."""
 import argparse
 import json
-import os
 from pathlib import Path
 import sys
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from goSolver import ROOT, load_config, methods, git_identity
+from internal.experiment import ROOT, load_config, methods, make_jobs
+from internal.runner import git_identity, run_jobs
 
 def main():
     ap=argparse.ArgumentParser()
@@ -25,20 +25,17 @@ def main():
         return
     if a.index is None or not 0<=a.index<len(plan['tasks']): raise ValueError('invalid configuration index')
     task=plan['tasks'][a.index]; desc=config['families'][task['family']]
-    os.environ['AIJ_CODE_VERSION']=json.dumps(plan['code_version'])
-    os.environ['AIJ_RUNNER_VERSION']=json.dumps(plan['runner_version'])
     current=next(m for m in methods(desc['task'],plan['matrix'],task['family']) if m['id']==task['method']['id'])
     if current!=task['method']: raise ValueError('method changed after preparing campaign')
     names=(Path(config['manifest_root'])/desc['manifest']).read_text().splitlines()
     if names!=plan['manifests'][task['family']]: raise ValueError('manifest changed after preparing campaign')
-    count=1 if plan['profile']=='smoke' else sum(bool(n.strip()) and not n.startswith('#') for n in names)
-    if task['job_ids']!=[f'{task["family"]}-{i:04d}-{current["id"]}' for i in range(1,count+1)]:
-        raise ValueError('manifest count changed after preparation')
+    jobs = [job for job in make_jobs(config, plan['profile'], plan['matrix'], [task['family']])
+            if job['method']['id'] == current['id']]
+    if [job['id'] for job in jobs] != task['job_ids']:
+        raise ValueError('instance list changed after preparation')
     output=folder/'runs'/task['key']
-    command=[sys.executable,str(ROOT/'goSolver.py'),'--config',plan['config'],'--profile',plan['profile'],
-             '--matrix',plan['matrix'],'--families',task['family'],'--methods',current['id'],
-             '--workers',str(plan['workers']),'--output',str(output),'--execute']
-    if (output/'run.json').exists(): command.append('--resume')
-    os.execv(sys.executable,command)
+    run_jobs(config, jobs, profile=plan['profile'], matrix=plan['matrix'],
+             workers=plan['workers'], output=output, resume=(output/'run.json').exists(),
+             code_version=plan['code_version'], runner_version=plan['runner_version'])
 
 if __name__=='__main__': main()

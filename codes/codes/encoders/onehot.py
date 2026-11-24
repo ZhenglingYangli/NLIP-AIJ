@@ -89,13 +89,6 @@ def encode_term_oh(
             for i, q in enumerate(sorted_var_indices):
                 r_q = r_tuple[i]
                 hard_clauses.append([-z_var, x_fn(q, r_q)])
-        elif for_objective and weight < 0:
-            # Objective only: OH-H2 suffices (OH-H1 redundant for c<0, per paper §3.1)
-            clause = [z_var]
-            for i, q in enumerate(sorted_var_indices):
-                r_q = r_tuple[i]
-                clause.append(-x_fn(q, r_q))
-            hard_clauses.append(clause)
         else:
             # Constraints: need full biconditional (OH-H1 + OH-H2)
             for i, q in enumerate(sorted_var_indices):

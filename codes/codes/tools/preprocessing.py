@@ -164,15 +164,21 @@ def _probe_binary_variables(terms, variables, constraints):
                    for t in a.get('terms', []) for v in t.get('vars', {})}
     slopes = {v: [0, 0] for v, info in variables.items()
               if info['lb'] == 0 and info['ub'] == 1 and v not in constrained}
+    if not slopes:
+        return {}
     for t in terms:
         c = _safe_fraction(t.get('c', 0))
         powers = t.get('vars', {})
-        for v in powers.keys() & slopes.keys():
-            upper_product = 1
-            for other, power in powers.items():
-                if other != v:
-                    upper_product *= variables[other]['ub'] ** power
-            lo, hi = (c, c) if len(powers) == 1 else (min(0, c * upper_product), max(0, c * upper_product))
+        candidates = powers.keys() & slopes.keys()
+        if not candidates:
+            continue
+        # Eligible binary factors have upper bound one, so their removal
+        # leaves this product unchanged for every candidate in the term.
+        upper_product = 1
+        for name, power in powers.items():
+            upper_product *= variables[name]['ub'] ** power
+        lo, hi = (c, c) if len(powers) == 1 else (min(0, c * upper_product), max(0, c * upper_product))
+        for v in candidates:
             slopes[v][0] += lo
             slopes[v][1] += hi
     return {v: (1 if lo > 0 else 0) for v, (lo, hi) in slopes.items() if lo > 0 or hi < 0}
@@ -212,18 +218,17 @@ def _bound_tightening(constraints, variables, max_rounds=10):
     for _ in range(max_rounds):
         changed = False
         for coeffs, rel, rhs in linear:
+            contributions = {v: sorted((c * variables[v]['lb'], c * variables[v]['ub']))
+                             for v, c in coeffs.items()}
+            sum_min = sum((ends[0] for ends in contributions.values()), Fraction(0))
+            sum_max = sum((ends[1] for ends in contributions.values()), Fraction(0))
             for v, c in coeffs.items():
                 info = variables[v]
                 lo, hi = info['lb'], info['ub']
                 if lo > hi:
                     return total
-                other_min = other_max = Fraction(0)
-                for u, a in coeffs.items():
-                    if u == v:
-                        continue
-                    ends = [a * variables[u]['lb'], a * variables[u]['ub']]
-                    other_min += min(ends)
-                    other_max += max(ends)
+                old_min, old_max = contributions[v]
+                other_min, other_max = sum_min - old_min, sum_max - old_max
                 new_lo, new_hi = lo, hi
                 if rel in ('<=', '<', '=', '=='):
                     bound = (rhs - other_min) / c
@@ -243,6 +248,10 @@ def _bound_tightening(constraints, variables, max_rounds=10):
                     changed = True
                     if new_lo > new_hi:
                         return total
+                    new_min, new_max = sorted((c * new_lo, c * new_hi))
+                    sum_min += new_min - old_min
+                    sum_max += new_max - old_max
+                    contributions[v] = new_min, new_max
         if not changed:
             break
     return total

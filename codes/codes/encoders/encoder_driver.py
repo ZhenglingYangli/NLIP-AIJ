@@ -2,6 +2,7 @@
 
 from pysat.formula import WCNF, IDPool
 from pysat.card import CardEnc
+from tools.arithmetic import bound_clauses
 import math
 
 
@@ -222,6 +223,4 @@ def _ensure_una_structure(w, x_fn, q, ub):
 def _ensure_bin_structure(w, x_fn, q, ub):
     num_bits = max(1, ub.bit_length())
     bits = [x_fn(q, r) for r in range(num_bits)]
-    for r in range(num_bits):
-        if not ((ub >> r) & 1):
-            w.append([-bits[r]] + [-bits[k] for k in range(r + 1, num_bits) if (ub >> k) & 1])
+    w.extend(bound_clauses(bits, ub))

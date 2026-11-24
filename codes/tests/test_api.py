@@ -81,7 +81,7 @@ check("topw = 10", wcnf.topw == 10, f"got {wcnf.topw}")
 print("\n[4] WCNF to_file export")
 with tempfile.NamedTemporaryFile(suffix=".wcnf", delete=False) as f:
     tmp_path = f.name
-wcnf.to_file(tmp_path)
+wcnf.to_file(tmp_path, format='legacy')
 check("file created", os.path.exists(tmp_path))
 check("file non-empty", os.path.getsize(tmp_path) > 0)
 with open(tmp_path) as f:

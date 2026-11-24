@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from solver.solve import build_and_solve, build_wcnf, EncodingTimeoutError
 from encoders.onehot import _EncodingTimeout
-from solver.config import EncodingConfig
+from solver.config import EncodingConfig, MAINLINE_SOLVER, mainline_config
 from tools.verify import verify_solution, format_verification_report
 
 _timeout_ctx = {"problem_name": "", "encoding": "", "solver": "", "t_start": 0}
@@ -127,12 +127,13 @@ def print_verbose(result, problem):
         print(f"  (assignment vector length: {len(result['assignment'])})")
 
 
-def main():
+def parse_arguments(argv=None):
     parser = argparse.ArgumentParser(
         description="NLIP to MaxSAT: convert nonlinear integer programming to MaxSAT and solve",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+  python main.py problem.json --preset mainline  # adopted BIN+D + RC2, LRN off
   python main.py problem.json                    # solve with default settings
   python main.py problem.json -e UNA             # use UNA encoding
   python main.py problem.json -e BIN -s MAXHS    # use BIN encoding + MaxHS solver
@@ -167,9 +168,15 @@ Solvers:
     )
 
     parser.add_argument(
+        "--preset",
+        choices=["mainline"],
+        help="mainline: complete BIN+D + RC2, exact shared multiplication, LRN disabled"
+    )
+
+    parser.add_argument(
         "-e", "--encoding",
         choices=["OH", "UNA", "BIN"],
-        default="OH",
+        default=None,
         help="encoding method (default: OH)"
     )
 
@@ -182,14 +189,14 @@ Solvers:
     parser.add_argument(
         "--decomp-threshold",
         type=int,
-        default=3,
+        default=None,
         help="minimum degree to trigger decomposition (default: 3)"
     )
 
     parser.add_argument(
         "--decomp-strategy",
         choices=["sequential", "binary_tree"],
-        default="sequential",
+        default=None,
         help="decomposition strategy: sequential (paper §4 SD) or binary_tree (paper Figure 3b)"
     )
 
@@ -213,8 +220,8 @@ Solvers:
 
     parser.add_argument(
         "-s", "--solver",
-        choices=["RC2", "MAXHS", "WMAXCDCL", "OPENWBO", "NONE"],
-        default="RC2",
+        choices=["RC2", "MAXHS", "WMAXCDCL", "OPENWBO", "UWRMAXSAT", "EVALMAXRES", "NONE"],
+        default=None,
         help="solver backend (default: RC2). Use NONE to only generate WCNF."
     )
 
@@ -256,9 +263,49 @@ Solvers:
              "Only applies to .cnf inputs; triggers quadratic objective modeling."
     )
 
-    args = parser.parse_args()
+    args = parser.parse_args(argv)
+    cfg = mainline_config() if args.preset == "mainline" else EncodingConfig()
+    if args.preset == "mainline":
+        # A named research configuration must not silently become another method.
+        expected = {
+            "encoding": cfg.encoding,
+            "solver": MAINLINE_SOLVER,
+            "decomp_threshold": cfg.decomp_threshold,
+            "decomp_strategy": cfg.decomp_strategy,
+        }
+        for name, value in expected.items():
+            supplied = getattr(args, name)
+            if supplied is not None and supplied != value:
+                parser.error(f"--preset mainline requires {name.replace('_', '-')}={value}")
+        for name in ("decomp_relaxed", "no_decomp_shared", "no_weight_gcd", "no_preprocess"):
+            if getattr(args, name):
+                parser.error(f"--preset mainline conflicts with --{name.replace('_', '-')}")
+        args.decomp = cfg.use_decomposition
+    args.encoding = args.encoding or cfg.encoding
+    args.solver = args.solver or MAINLINE_SOLVER
+    if args.decomp_threshold is None:
+        args.decomp_threshold = cfg.decomp_threshold
+    args.decomp_strategy = args.decomp_strategy or cfg.decomp_strategy
     if args.solver == 'NONE' and not args.output:
         parser.error('solver NONE requires --output')
+    return args
+
+
+def config_from_arguments(args):
+    cfg = mainline_config() if args.preset == "mainline" else EncodingConfig()
+    cfg.encoding = args.encoding
+    cfg.enable_preprocess = not args.no_preprocess
+    cfg.use_decomposition = args.decomp
+    cfg.decomp_threshold = args.decomp_threshold
+    cfg.decomp_strategy = args.decomp_strategy
+    cfg.decomp_exact = not args.decomp_relaxed
+    cfg.decomp_shared = not args.no_decomp_shared
+    cfg.weight_gcd_normalize = not args.no_weight_gcd
+    return cfg
+
+
+def main(argv=None):
+    args = parse_arguments(argv)
 
     problem_name = os.path.basename(args.input)
     t_start = time.time()
@@ -310,14 +357,7 @@ Solvers:
         print(f"  Constraints: {len(problem.get('constraints', []))}")
         print(f"  Objective terms: {len(problem.get('objective', {}).get('terms', []))}")
 
-    cfg = EncodingConfig()
-    cfg.enable_preprocess = not args.no_preprocess
-    cfg.use_decomposition = args.decomp
-    cfg.decomp_threshold = args.decomp_threshold
-    cfg.decomp_strategy = args.decomp_strategy
-    cfg.decomp_exact = not args.decomp_relaxed
-    cfg.decomp_shared = not args.no_decomp_shared
-    cfg.weight_gcd_normalize = not args.no_weight_gcd
+    cfg = config_from_arguments(args)
     if args.timeout:
         total_timeout = int(args.timeout)
         now = time.time()
@@ -359,7 +399,7 @@ Solvers:
             if args.verbose:
                 print(f"\nBuilding WCNF ({args.encoding} encoding)...")
             wcnf, name2idx, _vpool = build_wcnf(problem, args.encoding, cfg)
-            wcnf.to_file(args.output)
+            wcnf.to_file(args.output, format='legacy')
             print(f"WCNF saved to: {args.output}")
             return 0
         # Refresh external solver timeout using the actual remaining wall-clock budget.

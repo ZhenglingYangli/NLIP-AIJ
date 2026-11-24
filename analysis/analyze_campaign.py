@@ -66,6 +66,7 @@ def make_plots(folder, groups, cutoff):
         by_family['qplib-diverse'] = {m: by_family['qplib'][m] + by_family['diverse'][m] for m in common}
     colors = {'RC2': '#D62728', 'MAXHS': '#FF7F0E', 'WMAXCDCL': '#2CA02C', 'OPENWBO': '#9467BD',
               'Z3': '#0047AB', 'CVC5': '#17BECF', 'CADICAL': '#D62728', 'SCIP-NATIVE': '#8C564B',
+              'UWRMAXSAT': '#BCBD22', 'EVALMAXRES': '#9467BD', 'CP-SAT': '#E377C2', 'GUROBI': '#222222',
               'SCIP-MILP': '#8C564B', 'CPLEX-NATIVE': '#E377C2', 'CPLEX-MILP': '#E377C2', 'HIGHS-MILP': '#222222'}
     for family, configs in sorted(by_family.items()):
         fig, ax = plt.subplots(figsize=(11, 9))
@@ -98,7 +99,9 @@ def analyze(folder, plots=True):
     summarize(folder)
     limits = plan.get('limits')
     if limits is None:
-        from goSolver import load_config
+        import sys
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "jobs"))
+        from internal.experiment import load_config
         limits = load_config(plan['config'])['profiles'][plan['profile']]
     cutoff = float(limits['solve_seconds'])
     with (folder / 'results.csv').open(encoding='utf-8', newline='') as f:

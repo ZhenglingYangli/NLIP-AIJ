@@ -126,7 +126,7 @@ def solve(path, k, encoding, backend, seconds, workdir, solver_paths, begin_veri
     else:
         if backend == 'RC2':
             from pysat.examples.rc2 import RC2
-            with RC2(formula) as oracle:
+            with RC2(formula, solver='glucose42') as oracle:
                 assignment = oracle.compute()
                 cost = oracle.cost
             status = 'UNSAT' if assignment is None else 'OPTIMAL'

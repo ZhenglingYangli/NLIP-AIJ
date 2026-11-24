@@ -9,6 +9,7 @@ import time
 sys.path.append(str(Path(__file__).with_name('baseline-deps')))
 import cvc5
 from cvc5 import Kind as K
+from tools.arithmetic import polynomial_interval as objective_interval
 
 
 class Unsupported(ValueError):
@@ -48,22 +49,6 @@ def expression(tm, variables, terms):
                                tm.mkTerm(K.POW, variables[n], tm.mkInteger(int(exponent))))
         summands.append(combine(tm, K.MULT, factors, tm.mkInteger(1)))
     return combine(tm, K.ADD, summands, tm.mkInteger(0))
-
-
-def objective_interval(terms, bounds):
-    lower = upper = 0
-    for c, powers in terms:
-        lo = hi = 1
-        for name, power in powers.items():
-            a, b = bounds[name]
-            endpoints = [a**power, b**power]
-            if power and power % 2 == 0 and a <= 0 <= b:
-                endpoints.append(0)
-            products = [lo*min(endpoints), lo*max(endpoints), hi*min(endpoints), hi*max(endpoints)]
-            lo, hi = min(products), max(products)
-        lower += min(c*lo, c*hi)
-        upper += max(c*lo, c*hi)
-    return lower, upper
 
 
 def build_model(problem):

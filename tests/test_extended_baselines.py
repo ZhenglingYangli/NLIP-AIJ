@@ -19,7 +19,7 @@ sys.path[:0] = [str(ROOT), str(ROOT.parent/'codes'/'codes'), str(ROOT.parent/'co
 from solvers.baseline import diverse_baseline as diverse
 from solvers.baseline import cvc5_baseline as cvc
 from pysat.solvers import Solver
-from goSolver import load_config
+from internal.experiment import load_config, default_config
 
 
 def evaluate(terms, point):
@@ -52,7 +52,7 @@ def test_diverse(work, config):
         feasible_values = []
         for encoding in ('DW', 'IW'):
             formula, original, offset = diverse.build_wcnf(n, clauses, k, encoding)
-            with Solver(name='cadical195') as sat:
+            with Solver(name='cadical300') as sat:
                 for clause in formula.hard:
                     sat.add_clause(clause)
                 for point in product((0, 1), repeat=n*k):
@@ -187,7 +187,7 @@ def test_cvc(work):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('output', type=Path)
-    parser.add_argument('--config', type=Path, default=ROOT / 'config.json')
+    parser.add_argument('--config', type=Path, default=default_config())
     args = parser.parse_args()
     config = load_config(args.config)
     start = time.monotonic()

@@ -9,7 +9,7 @@ from pysat.examples.rc2 import RC2
 from encoders.encoder_driver import encode_objective, add_domain_constraints, encode_constraints
 from .config import EncodingConfig
 from tools.preprocessing import preprocess_problem
-from fractions import Fraction
+from tools.arithmetic import cost_recovery
 from tools.verify import verify_solution
 
 
@@ -45,22 +45,37 @@ def _preprocess_wcnf(wcnf):
             new_hard.append(new_clause)
         wcnf.hard = new_hard
 
-    # Only shorter clauses can subsume a clause.  Index them by a member
-    # literal so unrelated clauses are never compared.
+    # Search only shorter clauses containing an indexed literal. Retaining
+    # unchecked clauses when the comparison budget expires is equivalent.
     if len(wcnf.hard) < 50_000:
-        by_literal = {}
+        by_length = {}
         unique = sorted({frozenset(c) for c in wcnf.hard}, key=lambda c: (len(c), tuple(sorted(c))))
+        remaining = 4 * sum(len(c) for c in unique)
         retained = []
         for cs in unique:
             if not cs:
                 retained = [[]]
                 break
-            if any(len(sc) < len(cs) and sc.issubset(cs)
-                   for lit in cs for sc in by_literal.get(lit, ())):
+            subsumed = False
+            for length in range(1, min(3, len(cs) - 1) + 1):
+                index = by_length.get(length, {})
+                for lit in sorted(cs):
+                    for candidate in index.get(lit, ()):
+                        if remaining <= 0:
+                            break
+                        remaining -= 1
+                        if candidate.issubset(cs):
+                            subsumed = True
+                            break
+                    if subsumed or remaining <= 0:
+                        break
+                if subsumed or remaining <= 0:
+                    break
+            if subsumed:
                 continue
             retained.append(sorted(cs))
             if len(cs) <= 3:
-                by_literal.setdefault(min(cs), []).append(cs)
+                by_length.setdefault(len(cs), {}).setdefault(min(cs), []).append(cs)
         wcnf.hard = retained
 
     removed = orig_hard - len(wcnf.hard)
@@ -201,7 +216,7 @@ def build_wcnf(problem, encoding, cfg, collect_timings=False):
 
 def solve_rc2(wcnf, phases=None):
     try:
-        solver = RC2(wcnf, adapt=True, exhaust=True, trim=3)
+        solver = RC2(wcnf, solver='glucose42', adapt=True, exhaust=True, trim=3)
         if phases:
             try:
                 solver.oracle.set_phases(phases)
@@ -223,23 +238,29 @@ def solve_rc2(wcnf, phases=None):
         raise RuntimeError(f"RC2 failed: {e}")
 
 
-def solve_external(wcnf, workdir, solver_path, timeout=0, greedy_cost=None):
+def solve_external(wcnf, workdir, solver_path, timeout=0, greedy_cost=None, *, backend=None, solver_args=None):
     with tempfile.NamedTemporaryFile(suffix='.wcnf', dir=workdir, delete=False) as f:
         wcnf_path = f.name
     try:
-        wcnf.to_file(wcnf_path)
+        wcnf.to_file(wcnf_path, format='legacy')
         cmd = [solver_path]
-        if os.path.basename(solver_path).lower().startswith('maxhs'):
+        backend = backend or ('MAXHS' if os.path.basename(solver_path).lower().startswith('maxhs') else None)
+        if backend == 'MAXHS':
             cmd.extend(['-printSoln', '-printSoln-old-format'])
-        if timeout and timeout > 0:
+        if backend == 'UWRMAXSAT' and '-m' not in (solver_args or []):
+            cmd.extend(['-m', '-bm'])
+        if timeout and timeout > 0 and backend not in ('UWRMAXSAT', 'EVALMAXRES'):
             cmd.append(f'-cpu-lim={int(timeout)}')
+        cmd.extend(solver_args or [])
         cmd.append(wcnf_path)
+        wcnf._external_command = cmd
         timed_out = False
         try:
             proc = subprocess.run(cmd, capture_output=True, text=True,
                                   timeout=int(timeout) + 30 if timeout and timeout > 0 else None)
             output, returncode = proc.stdout or '', proc.returncode
-            if returncode not in (0, 1, 10, 20, 30):
+            accepted_codes = (0, 10, 20, 30) if backend else (0, 1, 10, 20, 30)
+            if returncode not in accepted_codes:
                 raise RuntimeError(f'external solver failed: rc={returncode}; {(proc.stderr or "")[-2000:]}')
         except subprocess.TimeoutExpired as exc:
             output = exc.stdout or ''
@@ -264,7 +285,7 @@ def solve_external(wcnf, workdir, solver_path, timeout=0, greedy_cost=None):
         declared = {'OPTIMUM FOUND': 'OPTIMAL', 'SATISFIABLE': 'FEASIBLE',
                     'UNSATISFIABLE': 'UNSAT'}.get(status_line)
         exit_status = {10: 'FEASIBLE', 20: 'UNSAT', 30: 'OPTIMAL'}.get(returncode)
-        if declared and exit_status and ((declared == 'UNSAT') != (exit_status == 'UNSAT')):
+        if declared and exit_status and declared != exit_status:
             return -1, None, 'INVALID'
         status = declared or exit_status
         if status == 'UNSAT':
@@ -289,7 +310,9 @@ def solve_external(wcnf, workdir, solver_path, timeout=0, greedy_cost=None):
     finally:
         os.unlink(wcnf_path)
 
-def build_and_solve(problem, encoding, cfg, solver='RC2', collect_timings=True, output_path=None):
+def build_and_solve(problem, encoding, cfg, solver='RC2', collect_timings=True, output_path=None,
+                    *, on_built=None, on_verify=None):
+    """Solve and check the original problem, with optional experiment phase callbacks."""
     t_start = time.time()
 
     # Build WCNF
@@ -300,8 +323,11 @@ def build_and_solve(problem, encoding, cfg, solver='RC2', collect_timings=True, 
         wcnf, name2idx, vpool = build_result
         build_timings = {}
 
+    if on_built is not None:
+        on_built(wcnf, build_timings)
+
     if output_path is not None:
-        wcnf.to_file(output_path)
+        wcnf.to_file(output_path, format='legacy')
 
     processed_problem = wcnf._processed_problem
 
@@ -312,17 +338,20 @@ def build_and_solve(problem, encoding, cfg, solver='RC2', collect_timings=True, 
     if solver_upper == 'RC2':
         cost, assignment = solve_rc2(wcnf)
         ext_solver_status = 'OPTIMAL' if cost >= 0 else 'UNSAT'
-    elif solver_upper in ('MAXHS', 'WMAXCDCL', 'OPENWBO'):
+    elif solver_upper in ('MAXHS', 'WMAXCDCL', 'OPENWBO', 'UWRMAXSAT', 'EVALMAXRES'):
         path_map = {
             'MAXHS': cfg.maxhs_path,
             'WMAXCDCL': cfg.wmaxcdcl_path,
             'OPENWBO': cfg.openwbo_path,
+            'UWRMAXSAT': cfg.uwrmaxsat_path,
+            'EVALMAXRES': cfg.evalmaxres_path,
         }
         cost, assignment, ext_solver_status = solve_external(
             wcnf,
             cfg.workdir,
             path_map[solver_upper],
-            timeout=getattr(cfg, 'external_solver_timeout', 0)
+            timeout=getattr(cfg, 'external_solver_timeout', 0),
+            backend=solver_upper, solver_args=cfg.external_solver_args.get(solver_upper, [])
         )
     else:
         raise ValueError(f"Unsupported solver: {solver}")
@@ -332,12 +361,8 @@ def build_and_solve(problem, encoding, cfg, solver='RC2', collect_timings=True, 
     objective_exact = None
     objective_value = None
     if cost >= 0 and ext_solver_status in ('OPTIMAL', 'FEASIBLE'):
-        shifted = ((total_soft_weight - cost) - getattr(wcnf, '_neg_soft_total', 0)) * wcnf._weight_gcd
-        meta_obj = (wcnf._preprocess_meta or {}).get('objective', {})
-        objective_exact = Fraction(shifted) * Fraction(meta_obj.get('scale_gcd', 1), meta_obj.get('scale_lcm', 1))
-        objective_exact += meta_obj.get('constant_shift', 0)
-        if meta_obj.get('sense_flip', False):
-            objective_exact = -objective_exact
+        alpha, beta = cost_recovery(wcnf)
+        objective_exact = alpha * cost + beta
         objective_value = int(objective_exact) if objective_exact.denominator == 1 else float(objective_exact)
 
     total_time = time.time() - t_start
@@ -366,6 +391,7 @@ def build_and_solve(problem, encoding, cfg, solver='RC2', collect_timings=True, 
         'name2idx': name2idx,
         'vpool': vpool
     }
+    result['external_command'] = getattr(wcnf, '_external_command', None)
     result['encoding_stats'] = wcnf._encoding_stats
 
     if collect_timings:
@@ -379,6 +405,8 @@ def build_and_solve(problem, encoding, cfg, solver='RC2', collect_timings=True, 
         result['preprocess_meta'] = wcnf._preprocess_meta
 
     if ext_solver_status in ('OPTIMAL', 'FEASIBLE'):
+        if on_verify is not None:
+            on_verify()
         check_start = time.time()
         check_result = result
         if ext_solver_status == 'FEASIBLE':

@@ -12,11 +12,32 @@ import unittest
 
 ROOT=Path(__file__).resolve().parents[1] / 'jobs'
 sys.path.insert(0,str(ROOT))
-from generate_scripts import configuration_tasks
-from goSolver import load_config, make_jobs, resume_compatible
+from internal.experiment import configuration_tasks, job_ids, load_config, make_jobs, manifest_names, default_config
+from internal.runner import resume_compatible
 from summarize_campaign import summarize
 
 class Campaign(unittest.TestCase):
+    def test_manifest_filtering_and_job_numbering_agree(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / 'inputs.txt').write_text('# inputs\n\n first.json \n  # note\n second.json\n')
+            for name in ('first.json', 'second.json'):
+                (root / name).write_text('{}')
+            config = {'manifest_root': str(root), 'benchmark_root': str(root),
+                      'code_root': str(root), 'solver_paths': {},
+                      'profiles': {'formal': {'solve_seconds': 3600}},
+                      'families': {'qplib': {'task': 'optimization', 'manifest': 'inputs.txt',
+                                            'directory': '.', 'extension': '.json'}}}
+            self.assertEqual(manifest_names(config, 'qplib'), ['first.json', 'second.json'])
+            tasks = configuration_tasks(config, 'formal', 'main')
+            jobs = make_jobs(config, 'formal', 'main', ['qplib'])
+            self.assertEqual(len(jobs), 32)
+            self.assertEqual({job['id'] for job in jobs},
+                             {job_id for task in tasks for job_id in task['job_ids']})
+            expected = ['qplib-0001-bin-wmaxcdcl', 'qplib-0002-bin-wmaxcdcl']
+            self.assertEqual(job_ids('qplib', 'bin-wmaxcdcl', 2), expected)
+            self.assertEqual([job['id'] for job in jobs if job['method']['id'] == 'bin-wmaxcdcl'], expected)
+
     def test_resume_on_equivalent_node(self):
         first={'host':'node1','cpus':[0,1],'cpu_model':['same CPU'],'platform':'Linux',
                'workers':2,'versions':{'solver':'1'},'jobs':['a','b']}
@@ -27,12 +48,12 @@ class Campaign(unittest.TestCase):
         self.assertFalse(resume_compatible(first,{**second,'jobs':['a','c']}))
 
     def test_partition_matches_full_matrix(self):
-        c=load_config(os.environ.get('AIJ_TEST_CONFIG', ROOT/'config.json'))
+        c=load_config(os.environ.get('AIJ_TEST_CONFIG', default_config()))
         main=configuration_tasks(c,'formal','main')
         ids=[j for t in main for j in t['job_ids']]
         expected=make_jobs(c,'formal','main',list(c['families']))
-        self.assertEqual(len(main),61)
-        self.assertEqual(len(ids),23335)
+        self.assertEqual(len(main),58)
+        self.assertEqual(len(ids),22220)
         self.assertEqual(len(set(ids)),len(ids))
         self.assertEqual(set(ids),{j['id'] for j in expected})
         extra=configuration_tasks(c,'formal','decomposition')
@@ -43,7 +64,7 @@ class Campaign(unittest.TestCase):
         self.assertTrue(all(not t['method']['options']['use_lrn'] for t in main+extra if 'encoding' in t['method']))
 
     def test_summary_preserves_missing_results(self):
-        c=load_config(os.environ.get('AIJ_TEST_CONFIG', ROOT/'config.json'))
+        c=load_config(os.environ.get('AIJ_TEST_CONFIG', default_config()))
         tasks=configuration_tasks(c,'smoke','main')
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp); (root/'campaign.json').write_text(json.dumps({'tasks':tasks}))
@@ -52,7 +73,7 @@ class Campaign(unittest.TestCase):
             out.mkdir(parents=True)
             (out/'result.json').write_text(json.dumps({'job_id':job_id,'method':task['method'],'status':'OPTIMAL','verified':True}))
             result=summarize(root)
-            self.assertEqual(result['planned'],61)
-            self.assertEqual(result['statuses'],{'OPTIMAL':1,'PENDING':60})
+            self.assertEqual(result['planned'],58)
+            self.assertEqual(result['statuses'],{'OPTIMAL':1,'PENDING':57})
 
 if __name__=='__main__': unittest.main(verbosity=2)

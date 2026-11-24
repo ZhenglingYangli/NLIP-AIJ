@@ -119,13 +119,6 @@ def encode_term_una(
             for i, q in enumerate(sorted_var_indices):
                 r_q = r_tuple[i]
                 hard_clauses.append([-z_var, x_fn(q, r_q)])
-        elif for_objective and diff_value < 0:
-            # Objective only: UNA-H2 suffices (UNA-H1 redundant for negative weight)
-            clause = [z_var]
-            for i, q in enumerate(sorted_var_indices):
-                r_q = r_tuple[i]
-                clause.append(-x_fn(q, r_q))
-            hard_clauses.append(clause)
         else:
             # Constraints: need full biconditional (UNA-H1 + UNA-H2)
             for i, q in enumerate(sorted_var_indices):

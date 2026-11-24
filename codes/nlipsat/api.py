@@ -127,7 +127,7 @@ def solve(
         Encoding strategy.
     config : EncodingConfig, optional
         Encoding configuration (see :func:`build_wcnf`).
-    solver : ``{"RC2", "MAXHS", "WMAXCDCL", "OPENWBO"}``, default ``"RC2"``
+    solver : ``{"RC2", "MAXHS", "WMAXCDCL", "OPENWBO", "UWRMAXSAT", "EVALMAXRES"}``, default ``"RC2"``
         MaxSAT solver backend.  ``"RC2"`` uses the PySAT built-in solver;
         the others require the corresponding binary on the system.
     verbose : bool, default False

@@ -425,17 +425,9 @@ def _encode_pb_adder(
             return [[]]
         return _encode_pb_adder_leq(flipped_lits, weights, new_bound, vpool)
     elif rel in ('=', '=='):
-        leq_clauses = _encode_pb_adder_leq(lits, weights, bound, vpool)
-        if leq_clauses is None:
-            return None
-        flipped_lits = [-l for l in lits]
-        new_bound = sum(weights) - bound
-        if new_bound < 0:
-            return None
-        geq_clauses = _encode_pb_adder_leq(flipped_lits, weights, new_bound, vpool)
-        if geq_clauses is None:
-            return None
-        return leq_clauses + geq_clauses
+        # Share one exact sum and fix its output bits. Two independent
+        # inequality circuits hide low-bit equalities from unit propagation.
+        return _encode_pb_adder_leq(lits, weights, bound, vpool, exact=True)
     return None
 
 
@@ -443,17 +435,21 @@ def _encode_pb_adder_leq(
     lits: List[int],
     weights: List[int],
     bound: int,
-    vpool: IDPool
+    vpool: IDPool,
+    exact: bool = False
 ) -> List[List[int]]:
+    """Encode a weighted sum <= bound, or = bound when exact is true."""
     import math
 
     n = len(lits)
     if bound < 0:
         return [[]]
     if n == 0:
-        return []
+        return [] if not exact or bound == 0 else [[]]
 
     max_sum = sum(weights)
+    if exact and bound > max_sum:
+        return [[]]
     num_bits = max(1, max_sum.bit_length())
     clauses = []
 
@@ -562,6 +558,16 @@ def _encode_pb_adder_leq(
             sum_bits.append((b, bit_columns[b][0]))
         else:
             sum_bits.append((b, None))
+
+    if exact:
+        for b, literal in sum_bits:
+            target = (bound >> b) & 1
+            if literal is None:
+                if target:
+                    return [[]]
+            else:
+                clauses.append([literal if target else -literal])
+        return clauses
 
     # Binary comparator: enforce sum <= bound
     # active[b] = "sum[MSB..b+1] equals bound[MSB..b+1]" (still potentially equal)

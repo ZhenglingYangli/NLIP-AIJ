@@ -6,10 +6,11 @@ from pathlib import Path
 import subprocess
 import sys
 
-MODULES = {'python-sat': 'pysat', 'z3-solver': 'z3'}
+MODULES = {'python-sat': 'pysat', 'z3-solver': 'z3', 'ortools': 'ortools.sat.python.cp_model',
+           'pyscipopt': 'pyscipopt', 'gurobipy': 'gurobipy'}
 
 def requirements(path):
-    for line in path.read_text().splitlines():
+    for line in path.read_text(encoding='utf-8').splitlines():
         line = line.strip()
         if not line or line.startswith('#'):
             continue
@@ -17,7 +18,7 @@ def requirements(path):
             yield from requirements(path.parent / line[3:].strip())
         else:
             name, version = line.split('==')
-            yield name, version
+            yield name.split('[', 1)[0], version
 
 def inspect(packages):
     missing, problems = [], []
@@ -29,7 +30,8 @@ def inspect(packages):
             try:
                 importlib.import_module(MODULES.get(name, name))
             except ModuleNotFoundError as error:
-                if error.name != MODULES.get(name, name):
+                module = MODULES.get(name, name)
+                if not (error.name == module or module.startswith((error.name or '') + '.')):
                     problems.append(f'{name}: 接口存在但缺少依赖：{error}')
                     continue
             except Exception as error:
@@ -64,13 +66,20 @@ def main():
         subprocess.run([sys.executable, '-m', 'pip', 'install', *missing], check=True)
         importlib.invalidate_caches()
         missing, problems = inspect(packages)
+    if not missing and not problems:
+        from pyscipopt import Model
+        model = Model()
+        scip = (model.getMajorVersion(), model.getMinorVersion(), model.getTechVersion())
+        print('SCIP: ' + '.'.join(map(str, scip)))
+        if scip != (10, 1, 0):
+            problems.append('SCIP 本体要求 10.1.0；请将 PySCIPOpt 从源码链接到该版本，不能只核对 Python 包版本。')
     for problem in problems:
         print(problem, file=sys.stderr)
     if missing or problems:
         print('请在这个项目环境中处理以上问题，再检查；已安装包不会因版本不同自动替换。', file=sys.stderr)
         return 1
     subprocess.run([sys.executable, '-m', 'pip', 'check'], check=True)
-    print('Python 依赖检查通过。求解器执行和完整 CPLEX 许可证由计算节点小实例测试检查。')
+    print('Python 依赖检查通过。外部求解器与 Gurobi 完整许可证须在计算节点验证。')
     return 0
 
 if __name__ == '__main__':

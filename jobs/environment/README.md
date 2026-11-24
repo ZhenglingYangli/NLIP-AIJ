@@ -1,5 +1,7 @@
 # Ubuntu 测试环境导出与 MatriCS 安装（不使用虚拟环境）
 
+> 本页为 2026-10-04 的历史环境记录。当前运行入口和依赖以 [jobs/README.md](../README.md)、`jobs/requirements-core.txt` 与 `jobs/requirements.txt` 为准；新运行使用项目 `.venv-solvers/bin/python`。下方旧版本与命令仅用于解释历史环境。
+
 导出日期：2026-10-04。源解释器是 Ubuntu 实验实际使用的 Python 3.9.25，位于 `/home/ubuntu/#科研项目/MIS/3-NLIP_AIJ/02-code/aij-experiments/.venv/bin/python`。这是包版本导出，不复制 `.venv` 目录；MatriCS 使用其站点 Python 3.9.20，二者补丁版本不同，安装后必须在计算节点测试。
 
 ## 文件

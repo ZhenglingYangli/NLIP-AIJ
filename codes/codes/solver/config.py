@@ -1,10 +1,10 @@
 import os
 import tempfile
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-_SOLVER_DIR = str(_PROJECT_ROOT / "solvers" / "maxsat")
+_SOLVER_DIR = str(_PROJECT_ROOT.parent / "solvers" / "current")
 
 
 @dataclass
@@ -70,6 +70,9 @@ class EncodingConfig:
     maxhs_path: str = os.environ.get("NLIP_MAXHS", os.path.join(_SOLVER_DIR, "maxhs"))
     wmaxcdcl_path: str = os.environ.get("NLIP_WMAXCDCL", os.path.join(_SOLVER_DIR, "wmaxcdcl"))
     openwbo_path: str = os.environ.get("NLIP_OPENWBO", os.path.join(_SOLVER_DIR, "openwbo"))
+    uwrmaxsat_path: str = os.environ.get("NLIP_UWRMAXSAT", os.path.join(_SOLVER_DIR, "uwrmaxsat"))
+    evalmaxres_path: str = os.environ.get("NLIP_EVALMAXRES", os.path.join(_SOLVER_DIR, "evalmaxres"))
+    external_solver_args: dict = field(default_factory=dict)
     external_solver_timeout: int = 0
 
     use_lrn: bool = False
@@ -80,3 +83,27 @@ class EncodingConfig:
     use_mapping_shift: bool = False
 
     encoding_deadline: float = 0.0
+
+
+MAINLINE_SOLVER = "RC2"
+MAINLINE_OPTIONS = {
+    "encoding": "BIN",
+    "use_decomposition": True,
+    "decomp_threshold": 3,
+    "decomp_strategy": "sequential",
+    "decomp_exact": True,
+    "decomp_shared": True,
+    "weight_gcd_normalize": True,
+    "use_lrn": False,
+    "enable_preprocess": True,
+}
+
+
+def mainline_config():
+    """Return the adopted complete BIN+D configuration, with LRN disabled.
+
+    A fresh object is returned so callers can set operational limits without
+    changing the shared preset. Matrix experiments may select another solver
+    separately while reusing the same BIN+D encoding configuration.
+    """
+    return EncodingConfig(**MAINLINE_OPTIONS)

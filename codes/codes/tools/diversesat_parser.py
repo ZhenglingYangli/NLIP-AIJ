@@ -3,21 +3,9 @@
 from __future__ import annotations
 
 from itertools import combinations
-from typing import Any, Dict, Iterator, List
+from typing import Any, Dict, List
 
-
-def _iter_dimacs_ints(lines: Iterator[str]) -> Iterator[int]:
-    for line in lines:
-        line = line.strip()
-        if not line or line.startswith('c'):
-            continue
-        if line.startswith('p'):
-            continue
-        for tok in line.split():
-            try:
-                yield int(tok)
-            except Exception:
-                continue
+from .dimacs import iter_dimacs_ints
 
 
 def _parse_cnf_raw(filepath: str):
@@ -39,7 +27,7 @@ def _parse_cnf_raw(filepath: str):
             break
 
     cur: List[int] = []
-    for v in _iter_dimacs_ints(iter(raw_lines)):
+    for v in iter_dimacs_ints(iter(raw_lines)):
         if v == 0:
             clauses.append(cur)
             cur = []

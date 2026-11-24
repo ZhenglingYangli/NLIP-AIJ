@@ -1,12 +1,14 @@
 {
   "code_root": "../codes",
-  "python": null,
+  "python": "../.venv-solvers/bin/python",
   "benchmark_root": "/scratch/scherif/NLIP/NLIP/benchmarks",
   "manifest_root": "../benchmarks/manifests",
   "solver_paths": {
-    "MAXHS": "/scratch/scherif/NLIP/NLIP/solvers/maxsat/maxhs",
-    "WMAXCDCL": "/scratch/scherif/NLIP/NLIP/solvers/maxsat/wmaxcdcl",
-    "OPENWBO": "/scratch/scherif/NLIP/NLIP/solvers/maxsat/openwbo"
+    "MAXHS": "../solvers/current/maxhs",
+    "WMAXCDCL": "../solvers/current/wmaxcdcl",
+    "UWRMAXSAT": "../solvers/current/uwrmaxsat",
+    "EVALMAXRES": "../solvers/current/evalmaxres",
+    "CADICAL": "../solvers/current/cadical"
   },
   "profiles": {
     "smoke": {
@@ -70,5 +72,7 @@
       },
       "input_root": "../benchmarks/mipo"
     }
-  }
+  },
+  "solver_metadata": {},
+  "external_solver_args": {}
 }

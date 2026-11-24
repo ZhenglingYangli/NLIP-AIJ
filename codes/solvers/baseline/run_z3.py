@@ -112,11 +112,8 @@ def _checked_model(problem, model, z3_vars):
     objective = evaluate_polynomial(problem.get('objective', {}).get('terms', []), values)
     return objective, values
 
-aij_progress = lambda *a, **kw: None
-
-
 def _phase1_optimize(problem, z3_vars, bounds, obj_expr, obj_terms, is_max,
-                     timeout):
+                     timeout, *, progress=None):
     """Try Z3 Optimize; returns result dict or None if inconclusive."""
     opt = Optimize()
     opt.set("timeout", int(timeout * 1000))
@@ -126,14 +123,17 @@ def _phase1_optimize(problem, z3_vars, bounds, obj_expr, obj_terms, is_max,
     add_problem_constraints(opt, problem, z3_vars)
 
     handle = opt.maximize(obj_expr) if is_max else opt.minimize(obj_expr)
-    aij_progress('solve')
+    if progress is not None:
+        progress('solve')
     result = opt.check()
 
     if result == sat and _handle_is_finite(handle):
         obj_val, values = _checked_model(problem, opt.model(), z3_vars)
         if not is_true(simplify(handle.value() == to_z3_coeff(obj_val))):
             raise ValueError('Z3 optimum bound does not match its model')
-        return {'status': 'OPTIMAL', 'objective': obj_val, 'proven': True, 'witness': values}
+        # Nonlinear Optimize bounds require confirmation by the tightening phase.
+        if all(sum(term.get('vars', {}).values()) <= 1 for term in obj_terms):
+            return {'status': 'OPTIMAL', 'objective': obj_val, 'proven': True, 'witness': values}
 
     if result == unsat:
         return {'status': 'UNSAT', 'objective': None, 'proven': True}
@@ -154,12 +154,14 @@ def _phase1_optimize(problem, z3_vars, bounds, obj_expr, obj_terms, is_max,
 # ---------------------------------------------------------------------------
 
 def _phase2_iterative(problem, z3_vars, bounds, obj_expr, obj_terms, is_max,
-                      timeout_deadline, initial_val=None, initial_z3_obj=None, initial_witness=None):
+                      timeout_deadline, initial_val=None, initial_z3_obj=None, initial_witness=None,
+                      *, progress=None):
     """Iteratively improve the objective with Z3 Solver.
 
     Returns (proven_optimal: bool, best_val, best_z3_obj).
     """
-    aij_progress('build')
+    if progress is not None:
+        progress('build')
     solver = Solver()
     for b in bounds:
         solver.add(b)
@@ -185,7 +187,8 @@ def _phase2_iterative(problem, z3_vars, bounds, obj_expr, obj_terms, is_max,
             else:
                 solver.add(obj_expr < best_z3_obj)
 
-        aij_progress('solve')
+        if progress is not None:
+            progress('solve')
         r = solver.check()
 
         if r == sat:
@@ -218,12 +221,14 @@ def _phase2_iterative(problem, z3_vars, bounds, obj_expr, obj_terms, is_max,
 #  Main QPLIB solver entry
 # ---------------------------------------------------------------------------
 
-def solve_qplib(problem, timeout):
+def solve_qplib(problem, timeout, *, progress=None, on_verify=None):
     if problem.get('objective', {}).get('factor_blocks'):
         return {'status': 'UNSUPPORTED', 'verified': False, 'error_msg': 'baseline input requires an explicit polynomial, not factor_blocks', 'objective': None}
-    result = _solve_qplib(problem, timeout)
+    result = _solve_qplib(problem, timeout, progress=progress)
     if result['status'] in ('OPTIMAL', 'FEASIBLE'):
         from tools.verify import verify_values
+        if on_verify is not None:
+            on_verify()
         start = time.perf_counter()
         try:
             actual, _, _ = verify_values(problem, result['witness'])
@@ -236,7 +241,7 @@ def solve_qplib(problem, timeout):
     return result
 
 
-def _solve_qplib(problem, timeout):
+def _solve_qplib(problem, timeout, *, progress=None):
     """Solve a parsed QPLIB instance with Z3 (two-phase strategy)."""
     wall_start = time.perf_counter()
     deadline = wall_start + timeout
@@ -254,7 +259,7 @@ def _solve_qplib(problem, timeout):
     # Cap Phase 1 time so Phase 2 always gets a fair share.
     phase1_budget = min(timeout * 0.4, 600)
     p1 = _phase1_optimize(problem, z3_vars, bounds, obj_expr, obj_terms,
-                          is_max, phase1_budget)
+                          is_max, phase1_budget, progress=progress)
 
     if p1.get('proven'):
         p1['time'] = time.perf_counter() - wall_start
@@ -275,7 +280,7 @@ def _solve_qplib(problem, timeout):
 
     proven, best_val, _, witness, infeasible = _phase2_iterative(
         problem, z3_vars, bounds, obj_expr, obj_terms, is_max,
-        deadline, best_val, best_z3_obj, p1.get('witness'))
+        deadline, best_val, best_z3_obj, p1.get('witness'), progress=progress)
 
     elapsed = time.perf_counter() - wall_start
 
@@ -294,14 +299,7 @@ def _solve_qplib(problem, timeout):
 #  SMT2 solver (satisfiability only) — multi-strategy portfolio
 # ---------------------------------------------------------------------------
 
-def _try_solver(solver, filepath, timeout_ms):
-    """Run a single Z3 solver attempt. Returns z3 result enum."""
-    solver.set("timeout", int(timeout_ms))
-    solver.from_file(filepath)
-    return solver.check()
-
-
-def solve_smt2(filepath, timeout):
+def solve_smt2(filepath, timeout, *, progress=None, on_verify=None):
     """Solve an SMT2 file with a multi-strategy portfolio.
 
     Strategy order (budget split across strategies):
@@ -318,6 +316,7 @@ def solve_smt2(filepath, timeout):
         ("default", Solver),
     ]
     n = len(strategies)
+    read_seconds = 0.0
 
     try:
         for idx, (tag, make_solver) in enumerate(strategies):
@@ -329,16 +328,29 @@ def solve_smt2(filepath, timeout):
             budget_ms = remaining * 1000 if is_last else (remaining / (n - idx)) * 1000
 
             solver = make_solver()
-            r = _try_solver(solver, filepath, budget_ms)
+            if progress is not None:
+                progress('parse')
+            read_start = time.perf_counter()
+            solver.set("timeout", int(budget_ms))
+            solver.from_file(filepath)
+            read_seconds += time.perf_counter() - read_start
+            if progress is not None:
+                from telemetry import z3_features
+                progress('solve', read_seconds=read_seconds,
+                         problem_features=z3_features(solver.assertions()))
+            r = solver.check()
 
             if r == sat:
                 elapsed = time.perf_counter() - wall_start
+                if on_verify is not None:
+                    on_verify()
                 check_start = time.perf_counter()
                 model = solver.model()
                 if any(not is_true(simplify(model.eval(a, model_completion=True))) for a in solver.assertions()):
                     raise ValueError('original SMT witness verification failed')
+                witness = {'model_sexpr': model.sexpr()}
                 return {'status': 'SAT', 'objective': 'N/A', 'time': elapsed, 'verified': True,
-                        'time_verify': time.perf_counter() - check_start}
+                        'time_verify': time.perf_counter() - check_start, 'witness': witness}
             if r == unsat:
                 elapsed = time.perf_counter() - wall_start
                 return {'status': 'UNSAT', 'objective': 'N/A', 'time': elapsed}
