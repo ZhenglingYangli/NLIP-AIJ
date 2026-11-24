@@ -14,7 +14,7 @@ ROOT=Path(__file__).resolve().parents[1] / 'jobs'
 sys.path.insert(0,str(ROOT))
 from internal.experiment import configuration_tasks, job_ids, load_config, make_jobs, manifest_names, default_config
 from internal.runner import resume_compatible
-from summarize_campaign import summarize
+from summarize import summarize
 
 class Campaign(unittest.TestCase):
     def test_manifest_filtering_and_job_numbering_agree(self):
@@ -75,5 +75,39 @@ class Campaign(unittest.TestCase):
             result=summarize(root)
             self.assertEqual(result['planned'],58)
             self.assertEqual(result['statuses'],{'OPTIMAL':1,'PENDING':57})
+
+    def test_single_and_campaign_tables_agree(self):
+        # Both entry paths must preserve failed and missing runs and exact values.
+        method = {'id': 'bin-wmaxcdcl', 'encoding': 'BIN', 'solver': 'WMAXCDCL'}
+        jobs = [{'id': f'qplib-{i}-bin-wmaxcdcl', 'family': 'qplib',
+                 'task': 'optimization', 'method': method} for i in range(3)]
+        with tempfile.TemporaryDirectory() as temporary:
+            single = Path(temporary) / 'single'
+            campaign = Path(temporary) / 'campaign'
+            single.mkdir(); campaign.mkdir()
+            (single / 'run.json').write_text(json.dumps({'plan': {'jobs': jobs}}))
+            task = {'key': 'qplib-bin-wmaxcdcl', 'family': 'qplib', 'method': method,
+                    'job_ids': [job['id'] for job in jobs]}
+            (campaign / 'campaign.json').write_text(json.dumps({'tasks': [task]}))
+            for job, status in zip(jobs, ['OPTIMAL', 'TIMEOUT']):
+                result = {'job_id': job['id'], 'method': method, 'status': status,
+                          'verified': status == 'OPTIMAL', 'objective_exact': '1/3' if status == 'OPTIMAL' else None,
+                          'solve_wall_seconds': 2, 'formula': {'variables': 3, 'hard': 4}}
+                for base in [single, campaign / 'runs' / task['key']]:
+                    path = base / 'jobs' / job['id']
+                    path.mkdir(parents=True)
+                    (path / 'result.json').write_text(json.dumps(result))
+            one = summarize(single)
+            many = summarize(campaign)
+            expected = {'OPTIMAL': 1, 'TIMEOUT': 1, 'PENDING': 1}
+            self.assertEqual(one['statuses'], expected)
+            self.assertEqual(many['statuses'], expected)
+            self.assertEqual(one['planned'], many['planned'])
+            self.assertEqual((single / 'results.csv').read_bytes(), (campaign / 'results.csv').read_bytes())
+            path = campaign / 'runs' / task['key'] / 'jobs' / jobs[0]['id'] / 'result.json'
+            bad = json.loads(path.read_text()); bad['method'] = {'id': 'wrong'}
+            path.write_text(json.dumps(bad))
+            with self.assertRaisesRegex(ValueError, 'different configuration'):
+                summarize(campaign)
 
 if __name__=='__main__': unittest.main(verbosity=2)

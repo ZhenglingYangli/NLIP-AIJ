@@ -7,7 +7,7 @@ from functools import reduce
 from math import ceil, floor, gcd
 import time
 
-from baselines.scip_baseline import number, integer_polynomial, interval
+from tools.arithmetic import number, integer_polynomial, integer_polynomial_interval
 
 
 class Unsupported(ValueError):
@@ -84,7 +84,7 @@ def solve(problem, backend, seconds, begin_verify=lambda: None):
             return value
 
         def expression(poly):
-            lo, hi = interval(poly, bounds)
+            lo, hi = integer_polynomial_interval(poly, bounds)
             checked(lo)
             checked(hi)
             return sum(checked(c) * monomial(key) for key, c in poly.items())

@@ -181,7 +181,6 @@ Python 基线通过 `jobs/config.cluster.json` 的 `python` 启动，每个实�
 │   ├── internal/
 │   │   ├── experiment.py         唯一实验矩阵与输入清单展开逻辑
 │   │   ├── run_slurm.sh          Slurm 执行模板
-│   │   ├── run_campaign_task.py  数组序号对应到配置，检查续跑条件
 │   │   ├── runner.py             并行调度、CPU 分配、结果保存与续跑
 │   │   ├── supervisor.py         监督进程树的时间、内存和终止
 │   │   └── worker.py             读取一个任务，调用求解器并验解
@@ -208,9 +207,8 @@ Python 环境、外部求解器二进制、许可证和原始数据留在各自�
 | 文件 | 功能和修改时机 |
 | --- | --- |
 | `jobs/generate_scripts.py` | 检查依赖和输入，生成任务计划与提交命令；默认分区、并行数在顶部，日常优先用命令行参数覆盖 |
-| `jobs/goSolver.py` | 小测、单配置执行和 Slurm 数组入口 |
+| `jobs/goSolver.py` | 小测、单配置执行和 Slurm 数组入口，核对计划与续跑条件 |
 | `jobs/internal/experiment.py` | 方法组合、配置读取、实例展开、任务编号；修改科研方案时才改 |
-| `jobs/internal/run_campaign_task.py` | 取出数组元素对应的配置并调用运行器 |
 | `jobs/internal/runner.py` | 并行分发、物理核绑定、环境记录、结果保存与续跑 |
 | `jobs/internal/supervisor.py` | 进程树时间和内存控制、终止清理、阶段计时 |
 | `jobs/internal/worker.py` | 解析单个任务、调用编码或基线、验解并输出结果 |
@@ -232,7 +230,7 @@ Python 环境、外部求解器二进制、许可证和原始数据留在各自�
 | `codes/baselines/` | SCIP、Z3、CP-SAT、Gurobi 和 cvc5 等适配，部分历史基线保留作开发用途 |
 | `codes/nlipsat/` | Python API 与命令行包入口 |
 | `codes/telemetry.py` | 运行阶段、模型规模和求解质量记录 |
-| `analysis/summarize.py`、`summarize_campaign.py`、`result_table.py` | 单配置与整批结果汇总，保留失败和缺失项 |
+| `analysis/summarize.py` | 单配置与整批结果汇总，保留失败和缺失项 |
 | `analysis/analyze_campaign.py`、`run_campaign_analysis.sh` | 配置统计、成对比较、曲线图和分析作业 |
 | `analysis/export_results.py`、`push_results.sh` | 可选结果交付工具；原始结果另行保留 |
 | `tests/test_*.py`、`codes/tests/` | 可复用回归测试，验证接口、语义、资源控制和统计；不是正式性能输入 |

@@ -7,7 +7,7 @@ import json
 import math
 from pathlib import Path
 from statistics import median
-from summarize_campaign import summarize
+from summarize import summarize
 
 
 def number(value):
@@ -127,7 +127,7 @@ def analyze(folder, plots=True):
         statuses.extend({'family': family, 'method': method, 'status': s, 'count': n} for s, n in sorted(counts.items()))
     write_csv(analysis/'config_summary.csv', summaries, list(summaries[0]))
     write_csv(analysis/'status_counts.csv', statuses, ['family','method','status','count'])
-    from result_table import FEATURES, QUALITY
+    from summarize import FEATURES, QUALITY
     base=['job_id','family','method','status','verified']
     for name,fields in [
         ('instance_features',base+['original_'+k for k in FEATURES]),

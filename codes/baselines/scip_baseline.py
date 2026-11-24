@@ -1,19 +1,15 @@
 """Independent exact Boolean-product MILP and native polynomial SCIP models."""
-from fractions import Fraction
 from functools import reduce
-from math import ceil, floor, gcd, lcm
+from math import ceil, floor, gcd
 from pathlib import Path
 import sys
 import time
+from tools.arithmetic import number, integer_polynomial, integer_polynomial_interval, exact_double_integer
 
 # Prefer the active interpreter's packages over a legacy --target installation.
 sys.path.append(str(Path(__file__).with_name('baseline-deps')))
 from pyscipopt import Model, quicksum
 import pyscipopt
-
-
-def number(x):
-    return Fraction(str(x))
 
 
 def product(a, b):
@@ -23,41 +19,6 @@ def product(a, b):
             key = ka | kb
             out[key] = out.get(key, 0) + ca * cb
     return {k: c for k, c in out.items() if c}
-
-
-def integer_polynomial(terms):
-    merged = {}
-    for term in terms:
-        key = tuple(sorted((n, int(k)) for n, k in term.get('vars', {}).items() if k))
-        if any(k < 0 for _, k in key):
-            raise ValueError('negative exponent outside polynomial scope')
-        merged[key] = merged.get(key, Fraction(0)) + number(term.get('c', 1))
-    merged = {key: c for key, c in merged.items() if c}
-    scale = lcm(*(v.denominator for v in merged.values())) if merged else 1
-    return {key: int(c * scale) for key, c in merged.items()}, scale
-
-
-def interval(poly, bounds):
-    low = high = 0
-    for key, c in poly.items():
-        lo = hi = 1
-        for name, power in key:
-            a, b = bounds[name]
-            ends = [a ** power, b ** power]
-            if power % 2 == 0 and a <= 0 <= b:
-                ends.append(0)
-            x, y = min(ends), max(ends)
-            products = [lo*x, lo*y, hi*x, hi*y]
-            lo, hi = min(products), max(products)
-        low += min(c*lo, c*hi)
-        high += max(c*lo, c*hi)
-    return low, high
-
-
-def exact_double_integer(value):
-    if abs(value) > 2**53:
-        raise ValueError('UNSUPPORTED_NUMERIC_RANGE: integer coefficient or bound exceeds 2^53')
-    return int(value)
 
 
 def build_model(problem, route, forced=None):
@@ -142,7 +103,7 @@ def build_model(problem, route, forced=None):
         poly = {key: c//divisor for key,c in poly.items()}
         rhs /= divisor
         expr = expression(poly)
-        lo, hi = interval(poly, bounds)
+        lo, hi = integer_polynomial_interval(poly, bounds)
         rel = atom.get('rel', atom.get('sense', '<='))
         def upper(bound):
             m = exact_double_integer(max(0, hi-bound)) if guard is not None else 0
@@ -168,7 +129,7 @@ def build_model(problem, route, forced=None):
     expr = expression(poly)
     sense = 'minimize' if objective.get('sense', 'max').lower() in ('min', 'minimize') else 'maximize'
     if route == 'native' and any(sum(k for _,k in key)>1 for key in poly):
-        lo, hi = interval(poly, bounds)
+        lo, hi = integer_polynomial_interval(poly, bounds)
         t = model.addVar(name='objective_value', lb=exact_double_integer(lo), ub=exact_double_integer(hi))
         model.addCons(t <= expr if sense == 'maximize' else t >= expr)
         model.setObjective(t, sense)
