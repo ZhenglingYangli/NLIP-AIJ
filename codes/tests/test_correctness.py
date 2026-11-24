@@ -11,7 +11,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / 'codes'))
+sys.path.insert(0, str(ROOT))
 from pysat.formula import WCNF
 from pysat.solvers import Solver
 from solver.config import EncodingConfig

@@ -11,7 +11,7 @@ import unittest
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path[:0] = [str(ROOT / 'codes'), str(ROOT / 'codes' / 'codes')]
+sys.path[:0] = [str(ROOT / 'codes')]
 HAS_PYSAT = importlib.util.find_spec('pysat') is not None
 HAS_Z3 = importlib.util.find_spec('z3') is not None
 HAS_PSUTIL = importlib.util.find_spec('psutil') is not None
@@ -64,7 +64,7 @@ class CoreCallbacks(unittest.TestCase):
 @unittest.skipUnless(HAS_Z3, 'requires the project Z3 runtime')
 class Z3Callbacks(unittest.TestCase):
     def setUp(self):
-        from solvers.baseline import run_z3
+        from baselines import run_z3
         self.baseline = run_z3
         self.folder = tempfile.TemporaryDirectory()
         self.addCleanup(self.folder.cleanup)

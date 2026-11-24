@@ -188,11 +188,12 @@ Python 基线通过 `jobs/config.cluster.json` 的 `python` 启动，每个实�
 │   ├── tools/                   首次配置、环境检查、输入检查
 │   └── data/                    MIPO 数据准备与转换工具
 ├── codes/
-│   ├── codes/tools/             输入解析、预处理、精确算术和验解
-│   ├── codes/encoders/           OH、UNA、BIN 与分解编码
-│   ├── codes/solver/             SAT/MaxSAT 调用、终态与模型读取
+│   ├── main.py                 单模型命令行入口
+│   ├── tools/             输入解析、预处理、精确算术和验解
+│   ├── encoders/           OH、UNA、BIN 与分解编码
+│   ├── solver/             SAT/MaxSAT 调用、终态与模型读取
 │   ├── nlipsat/                 对外 Python API
-│   ├── solvers/baseline/         SCIP、Z3、CP-SAT、Gurobi、cvc5 适配
+│   ├── baselines/         SCIP、Z3、CP-SAT、Gurobi、cvc5 适配
 │   └── tests/                   求解核心与接口测试
 ├── benchmarks/manifests/        正式实例清单
 ├── analysis/                    汇总、统计表、图和结果导出
@@ -200,7 +201,7 @@ Python 基线通过 `jobs/config.cluster.json` 的 `python` 启动，每个实�
 └── results/                     本机产生的日志和结果，不进源码提交
 ```
 
-Python 环境、外部求解器二进制、许可证和原始数据留在各自机器上。日常操作只使用两个实验入口。`codes/` 是可安装的 NLIPSat 包，其内部 `codes/` 是 Python 模块目录，源码只保存一份。
+Python 环境、外部求解器二进制、许可证和原始数据留在各自机器上。日常操作只使用两个实验入口。`codes/` 直接包含求解入口、编码器、解析工具、基线和 Python API。
 
 ### 3.3 主要文件功能
 
@@ -222,13 +223,13 @@ Python 环境、外部求解器二进制、许可证和原始数据留在各自�
 | `jobs/tools/check_final_inputs.py` | 检查输入清单，解析多项式数据；不运行正式性能实验 |
 | `jobs/data/prepare_mipo.py`、`convert_mipo.py` | MIPO 数据准备与 JSON 转换；正式重跑复用已冻结的 870 个 JSON |
 | `benchmarks/manifests/*.txt` | 四个正式实例清单；SMT 主批使用 `smt_list_small.txt` |
-| `codes/codes/encoders/onehot.py`、`unary.py`、`binary.py` | OH、UNA、BIN 编码 |
-| `codes/codes/encoders/constraints.py`、`decomposition.py`、`encoder_driver.py` | 约束编码、乘积分解、编码调度 |
-| `codes/codes/tools/*_parser.py`、`dimacs.py` | QPLIB、CNF/DiverseSAT 和 SMT 输入解析 |
-| `codes/codes/tools/preprocessing.py`、`arithmetic.py`、`verify.py` | 预处理、精确算术与目标恢复、原问题验解 |
-| `codes/codes/solver/config.py` | 编码选项和 BIN+D 预设；正式方法选择仍由实验配置模块控制 |
-| `codes/codes/solver/solve.py`、`sat.py` | MaxSAT、SAT 调用以及状态与模型读取 |
-| `codes/solvers/baseline/` | SCIP、Z3、CP-SAT、Gurobi 和 cvc5 等适配，部分历史基线保留作开发用途 |
+| `codes/encoders/onehot.py`、`unary.py`、`binary.py` | OH、UNA、BIN 编码 |
+| `codes/encoders/constraints.py`、`decomposition.py`、`encoder_driver.py` | 约束编码、乘积分解、编码调度 |
+| `codes/tools/*_parser.py`、`dimacs.py` | QPLIB、CNF/DiverseSAT 和 SMT 输入解析 |
+| `codes/tools/preprocessing.py`、`arithmetic.py`、`verify.py` | 预处理、精确算术与目标恢复、原问题验解 |
+| `codes/solver/config.py` | 编码选项和 BIN+D 预设；正式方法选择仍由实验配置模块控制 |
+| `codes/solver/solve.py`、`sat.py` | MaxSAT、SAT 调用以及状态与模型读取 |
+| `codes/baselines/` | SCIP、Z3、CP-SAT、Gurobi 和 cvc5 等适配，部分历史基线保留作开发用途 |
 | `codes/nlipsat/` | Python API 与命令行包入口 |
 | `codes/telemetry.py` | 运行阶段、模型规模和求解质量记录 |
 | `analysis/summarize.py`、`summarize_campaign.py`、`result_table.py` | 单配置与整批结果汇总，保留失败和缺失项 |

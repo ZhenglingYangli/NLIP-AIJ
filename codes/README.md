@@ -4,14 +4,15 @@ This directory contains the installable NLIPSat solver and its Python API. For t
 
 ## Structure
 
-- `codes/` contains input parsers, preprocessing, encoders, SAT/MaxSAT adapters and original-problem verification.
+- `main.py` is the single-model command-line entry.
+- `encoders/` implements OH, UNA, BIN and decomposition.
+- `solver/` contains encoding configuration and SAT/MaxSAT calls.
+- `tools/` handles parsing, preprocessing, exact arithmetic and verification.
 - `nlipsat/` exposes the Python API and installed command.
-- `solvers/baseline/` contains direct-model baseline adapters.
+- `baselines/` contains direct-model baseline adapters.
 - `examples/` contains a small JSON model and an API example.
 - `tests/` contains core correctness and interface tests.
 - `pyproject.toml` defines the installable package.
-
-The outer `codes/` is the package root; the inner `codes/` is its Python module. They contain different files.
 
 ## Run one model
 
@@ -19,8 +20,8 @@ After setting up the project environment, execute from the repository root:
 
 ```bash
 source matrics.env
-"$AIJ_PYTHON" codes/codes/main.py codes/examples/example4.json --preset mainline --verify
-"$AIJ_PYTHON" codes/codes/main.py --help
+"$AIJ_PYTHON" codes/main.py codes/examples/example4.json --preset mainline --verify
+"$AIJ_PYTHON" codes/main.py --help
 ```
 
 The example has original objective 2. The `mainline` preset selects BIN+D with RC2, exact multiplication, shared substructures and preprocessing, with LRN disabled. Formal experiment jobs select their own registered backends through `jobs/internal/experiment.py`.

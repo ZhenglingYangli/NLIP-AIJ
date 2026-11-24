@@ -9,7 +9,6 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / 'codes'))
 sys.path.insert(0, str(ROOT))
 
 from main import config_from_arguments, main, parse_arguments

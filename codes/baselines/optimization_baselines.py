@@ -5,7 +5,7 @@ SCIP builds the linear IR only; it does not presolve or solve the exported MILP.
 from fractions import Fraction
 from math import ceil, floor
 import time
-from solvers.baseline.scip_baseline import build_model, integer_polynomial, number, exact_double_integer
+from baselines.scip_baseline import build_model, integer_polynomial, number, exact_double_integer
 from telemetry import progress, quality
 
 

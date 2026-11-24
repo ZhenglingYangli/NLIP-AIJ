@@ -1,7 +1,7 @@
 from pathlib import Path
 import sys
 _PROJECT=Path(__file__).resolve().parents[1]
-sys.path[:0]=[str(_PROJECT/'jobs'),str(_PROJECT/'analysis'),str(_PROJECT/'codes'),str(_PROJECT/'codes/codes')]
+sys.path[:0]=[str(_PROJECT/'jobs'),str(_PROJECT/'analysis'),str(_PROJECT/'codes')]
 """Exhaustive original semantics, independent of DW/IW counters and SMT IR."""
 from fractions import Fraction
 from itertools import product, combinations
@@ -16,8 +16,8 @@ import time
 
 ROOT=Path(__file__).resolve().parents[1] / 'jobs'
 sys.path[:0] = [str(ROOT), str(ROOT.parent/'codes'/'codes'), str(ROOT.parent/'codes')]
-from solvers.baseline import diverse_baseline as diverse
-from solvers.baseline import cvc5_baseline as cvc
+from baselines import diverse_baseline as diverse
+from baselines import cvc5_baseline as cvc
 from pysat.solvers import Solver
 from internal.experiment import load_config, default_config
 

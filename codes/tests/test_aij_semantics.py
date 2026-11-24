@@ -17,7 +17,7 @@ from pysat.solvers import Solver
 
 
 ROOT = Path(__file__).resolve().parent.parent
-CODES = ROOT / "codes"
+CODES = ROOT
 if str(CODES) not in sys.path:
     sys.path.insert(0, str(CODES))
 

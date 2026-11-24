@@ -1,7 +1,7 @@
 from pathlib import Path
 import sys
 _PROJECT=Path(__file__).resolve().parents[1]
-sys.path[:0]=[str(_PROJECT/'jobs'),str(_PROJECT/'analysis'),str(_PROJECT/'codes'),str(_PROJECT/'codes/codes')]
+sys.path[:0]=[str(_PROJECT/'jobs'),str(_PROJECT/'analysis'),str(_PROJECT/'codes')]
 """Configuration splitting must cover the frozen matrix exactly once."""
 import json
 import os

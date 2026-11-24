@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, Union
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
-_CODES_DIR = _REPO_ROOT / "codes"
+_CODES_DIR = _REPO_ROOT
 
 if str(_CODES_DIR) not in sys.path:
     sys.path.insert(0, str(_CODES_DIR))

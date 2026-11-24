@@ -23,7 +23,6 @@ def main():
     for name in ['OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS', 'NUMEXPR_NUM_THREADS']:
         os.environ[name] = '1'
     root = Path(job['code_root'])
-    sys.path.insert(0, str(root / 'codes'))
     sys.path.insert(0, str(root))
     from telemetry import enable, progress, problem_features
     from nlipsat import load_problem as parse_problem
@@ -62,7 +61,7 @@ def main():
     method = job['method']
     started = time.monotonic()
     if method['solver'] == 'CVC5':
-        from solvers.baseline.cvc5_baseline import solve, solve_smt2, Unsupported
+        from baselines.cvc5_baseline import solve, solve_smt2, Unsupported
         try:
             if job['task'] == 'decision':
                 result = solve_smt2(job['input'], max(.001, job['solve_seconds'] - (time.monotonic()-started)), begin_verify)
@@ -76,21 +75,21 @@ def main():
             problem = load_decision(job['input'])
         else:
             problem = load_problem(job['input'], k=job.get('k'))
-        from solvers.baseline.scip_baseline import solve
+        from baselines.scip_baseline import solve
         remaining = max(.001, job['solve_seconds'] - (time.monotonic() - started))
         result = solve(problem, 'milp' if method['solver']=='SCIP-MILP' else 'native',
                        remaining, job['task'], begin_verify)
     elif method['solver'] in ('CPLEX-NATIVE', 'CPLEX-MILP', 'HIGHS-MILP'):
-        from solvers.baseline.optimization_baselines import solve
+        from baselines.optimization_baselines import solve
         problem = load_problem(job['input'], k=job.get('k'))
         result = solve(problem, method['solver'], max(.001, job['solve_seconds'] - (time.monotonic()-started)), begin_verify)
     elif method['solver'] in ('CP-SAT', 'GUROBI'):
-        from solvers.baseline.integer_baselines import solve
+        from baselines.integer_baselines import solve
         problem = load_problem(job['input'], k=job.get('k'))
         result = solve(problem, method['solver'],
                        max(.001, job['solve_seconds'] - (time.monotonic()-started)), begin_verify)
     elif method['solver'] == 'Z3':
-        from solvers.baseline import run_z3 as baseline
+        from baselines import run_z3 as baseline
         if job['task'] == 'decision':
             raw = baseline.solve_smt2(job['input'], job['solve_seconds'],
                                       progress=progress, on_verify=begin_verify)

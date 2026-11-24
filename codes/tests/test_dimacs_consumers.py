@@ -9,7 +9,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT / 'codes'))
+sys.path.insert(0, str(ROOT))
 from tools.cnf_parser import parse_cnf_file
 from tools.diversesat_parser import parse_diversesat
 

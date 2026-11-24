@@ -18,7 +18,7 @@ def verify(n, clauses, k, values):
 
 
 def build_scip(n, clauses, k, encoding, forced=None):
-    from solvers.baseline.scip_baseline import Model, quicksum
+    from baselines.scip_baseline import Model, quicksum
     if encoding not in ('DW', 'IW') or k < 2:
         raise ValueError('expected DW/IW and k >= 2')
     model = Model('DiverseSAT_' + encoding)

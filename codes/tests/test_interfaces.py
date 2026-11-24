@@ -119,7 +119,7 @@ class Interfaces(unittest.TestCase):
                 p=parse_qplib_file(str(f))
                 self.assertEqual(oracle(p),expected)
                 helpers.Correctness.compare(self,p)
-                spec=importlib.util.spec_from_file_location('qplib_z3_check',ROOT/'solvers/baseline/run_z3.py')
+                spec=importlib.util.spec_from_file_location('qplib_z3_check',ROOT/'baselines/run_z3.py')
                 baseline=importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(baseline)
                 result=baseline.solve_qplib(p,5)
@@ -140,7 +140,7 @@ class Interfaces(unittest.TestCase):
         self.assertEqual(len(checks),42)
 
     def test_z3_baseline_reads_dnf_and_exact_coefficients(self):
-        spec = importlib.util.spec_from_file_location('aij_z3_baseline', ROOT/'solvers/baseline/run_z3.py')
+        spec = importlib.util.spec_from_file_location('aij_z3_baseline', ROOT/'baselines/run_z3.py')
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         for sense in ['min', 'max']:
@@ -153,7 +153,7 @@ class Interfaces(unittest.TestCase):
             self.assertIn(result['witness']['x'],[-1,1])
 
     def test_z3_nonlinear_optimum_matches_enumeration(self):
-        spec = importlib.util.spec_from_file_location('aij_z3_baseline', ROOT/'solvers/baseline/run_z3.py')
+        spec = importlib.util.spec_from_file_location('aij_z3_baseline', ROOT/'baselines/run_z3.py')
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
         for sense in ['min', 'max']:
@@ -173,7 +173,7 @@ class Interfaces(unittest.TestCase):
             self.assertTrue(result['verified'],result['verification'])
             self.assertTrue(result['verification']['source_smt_verified'])
             for backend in ['CADICAL','GLUCOSE']:
-                proc = subprocess.run([sys.executable,str(ROOT/'solvers/baseline/run_nlip_sat.py'),str(f),
+                proc = subprocess.run([sys.executable,str(ROOT/'baselines/run_nlip_sat.py'),str(f),
                                        '-e','BIN','--sat-solver',backend,'--timeout','20'],capture_output=True,text=True,timeout=30)
                 self.assertEqual(proc.returncode,0,proc.stdout+proc.stderr)
                 self.assertIn('Original SMT assertions: passed',proc.stdout)

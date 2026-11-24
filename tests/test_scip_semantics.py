@@ -1,7 +1,7 @@
 from pathlib import Path
 import sys
 _PROJECT=Path(__file__).resolve().parents[1]
-sys.path[:0]=[str(_PROJECT/'jobs'),str(_PROJECT/'analysis'),str(_PROJECT/'codes'),str(_PROJECT/'codes/codes')]
+sys.path[:0]=[str(_PROJECT/'jobs'),str(_PROJECT/'analysis'),str(_PROJECT/'codes')]
 """Compare both independent formulations with exhaustive original-model truth."""
 from pathlib import Path
 from fractions import Fraction
@@ -15,7 +15,7 @@ import time
 ROOT=Path(__file__).resolve().parents[1] / 'jobs'
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT.parent/'codes'/'codes'))
-from solvers.baseline.scip_baseline import build_model, solve
+from baselines.scip_baseline import build_model, solve
 
 def t(c=1, **powers):
     return {'c': c, 'vars': powers}

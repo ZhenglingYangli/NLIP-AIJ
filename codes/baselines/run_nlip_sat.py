@@ -13,7 +13,7 @@ import signal
 import sys
 import time
 
-CODES_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "codes")
+CODES_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, CODES_DIR)
 
 from pysat.solvers import Solver

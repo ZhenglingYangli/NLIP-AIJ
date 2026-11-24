@@ -2,7 +2,7 @@
 from pathlib import Path
 import sys
 ROOT=Path(__file__).resolve().parents[1]
-sys.path[:0]=[str(ROOT/'jobs'),str(ROOT/'codes'),str(ROOT/'codes/codes')]
+sys.path[:0]=[str(ROOT/'jobs'),str(ROOT/'codes')]
 from fractions import Fraction
 from itertools import product
 import copy
@@ -12,7 +12,7 @@ import unittest
 import tempfile
 from types import SimpleNamespace
 from unittest.mock import patch
-from solvers.baseline.integer_baselines import solve
+from baselines.integer_baselines import solve
 from tools.verify import verify_values
 
 
@@ -52,8 +52,8 @@ class NewBaselines(unittest.TestCase):
                         # process, so optional HiGHS libraries from other tests
                         # cannot override OR-Tools' bundled native libraries.
                         script = ('import sys,json; '
-                                  f'sys.path[:0]={[str(ROOT/"codes"),str(ROOT/"codes/codes")]!r}; '
-                                  'from solvers.baseline.integer_baselines import solve; '
+                                  f'sys.path[:0]={[str(ROOT/"codes")]!r}; '
+                                  'from baselines.integer_baselines import solve; '
                                   'p,b=json.loads(sys.stdin.read()); '
                                   'print(json.dumps(solve(p,b,60)))')
                         proc=subprocess.run([sys.executable,'-c',script],input=json.dumps([p,backend]),

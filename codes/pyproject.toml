@@ -14,8 +14,8 @@ dependencies = [
 ]
 
 [project.scripts]
-nlipsat = "codes.main:main"
+nlipsat = "nlipsat.__main__:main"
 
 [tool.setuptools]
-py-modules = ["telemetry"]
-packages = ["solvers", "solvers.baseline", "nlipsat", "codes", "codes.encoders", "codes.solver", "codes.tools"]
+py-modules = ["main", "telemetry"]
+packages = ["nlipsat", "encoders", "solver", "tools", "baselines"]

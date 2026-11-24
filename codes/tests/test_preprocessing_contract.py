@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 import unittest
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'codes'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from pysat.formula import WCNF
 from solver.solve import _preprocess_wcnf
 from tools.preprocessing import _bound_tightening, _probe_binary_variables

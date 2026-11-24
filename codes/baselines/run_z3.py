@@ -20,7 +20,7 @@ import traceback
 from fractions import Fraction
 from pathlib import Path
 
-CODES_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "codes")
+CODES_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 sys.path.insert(0, CODES_DIR)
 
 try:

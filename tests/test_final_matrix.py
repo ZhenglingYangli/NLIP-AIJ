@@ -1,7 +1,7 @@
 from pathlib import Path
 import sys
 _PROJECT=Path(__file__).resolve().parents[1]
-sys.path[:0]=[str(_PROJECT/'jobs'),str(_PROJECT/'analysis'),str(_PROJECT/'codes'),str(_PROJECT/'codes/codes')]
+sys.path[:0]=[str(_PROJECT/'jobs'),str(_PROJECT/'analysis'),str(_PROJECT/'codes')]
 import copy
 from fractions import Fraction
 from itertools import product
@@ -11,11 +11,11 @@ import unittest
 import importlib.util
 
 ROOT=Path(__file__).resolve().parents[1] / 'jobs'
-sys.path[:0]=[str(ROOT),str(ROOT.parent/'codes'),str(ROOT.parent/'codes/codes')]
+sys.path[:0]=[str(ROOT),str(ROOT.parent/'codes')]
 from nlipsat import solve, EncodingConfig
 from tools.verify import verify_values
 from internal.experiment import methods
-from solvers.baseline.optimization_baselines import solve as baseline
+from baselines.optimization_baselines import solve as baseline
 
 
 def optimum(p):

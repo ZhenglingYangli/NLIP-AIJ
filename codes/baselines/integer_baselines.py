@@ -7,7 +7,7 @@ from functools import reduce
 from math import ceil, floor, gcd
 import time
 
-from solvers.baseline.scip_baseline import number, integer_polynomial, interval
+from baselines.scip_baseline import number, integer_polynomial, interval
 
 
 class Unsupported(ValueError):

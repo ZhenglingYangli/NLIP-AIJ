@@ -3,7 +3,7 @@ import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _SOLVER_DIR = str(_PROJECT_ROOT.parent / "solvers" / "current")
 
 

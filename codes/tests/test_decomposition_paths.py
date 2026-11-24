@@ -7,7 +7,7 @@ import unittest
 from fractions import Fraction
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'codes'))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from pysat.examples.rc2 import RC2
 from solver.config import EncodingConfig
 from solver.solve import build_wcnf, build_and_solve

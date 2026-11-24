@@ -6,7 +6,7 @@ import shutil
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT.parent / 'codes' / 'codes'))
+sys.path.insert(0, str(ROOT.parent / 'codes'))
 from solver.config import MAINLINE_OPTIONS
 
 
