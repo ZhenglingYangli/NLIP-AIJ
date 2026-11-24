@@ -78,6 +78,8 @@ def parse_smt2_file(filepath: str, objective_mode: str = "sum",
                                                        variables=variables)
         constraints.extend(all_constraints)
 
+    except TimeoutError:
+        raise
     except Exception as e:
         if strict:
             raise ValueError(f"Z3 could not parse {path.name}: {e}") from e

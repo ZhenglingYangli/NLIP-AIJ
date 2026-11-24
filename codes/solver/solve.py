@@ -2,22 +2,22 @@ import os
 import subprocess
 import tempfile
 import time
+import sys
+import pickle
+from pathlib import Path
 from math import gcd
 from functools import reduce
 from pysat.formula import WCNF, IDPool
 from pysat.examples.rc2 import RC2
 from encoders.encoder_driver import encode_objective, add_domain_constraints, encode_constraints
 from .config import EncodingConfig
-from tools.preprocessing import preprocess_problem
+from tools.preprocessing import preprocess_problem, EncodingTimeoutError
 from tools.arithmetic import cost_recovery
 from tools.verify import verify_solution
 
 
-class EncodingTimeoutError(RuntimeError):
-    pass
-
-
-def _preprocess_wcnf(wcnf):
+def _preprocess_wcnf(wcnf, cfg=None):
+    _check_encoding_deadline(cfg, "WCNF simplification")
     if not wcnf.hard:
         return
 
@@ -26,12 +26,14 @@ def _preprocess_wcnf(wcnf):
     # Unit propagation on hard clauses
     units = set()
     for clause in wcnf.hard:
+        _check_encoding_deadline(cfg, "unit propagation")
         if len(clause) == 1:
             units.add(clause[0])
 
     if units:
         new_hard = []
         for clause in wcnf.hard:
+            _check_encoding_deadline(cfg, "unit propagation")
             if not clause:
                 # Preserve an existing contradiction.  Dropping this clause
                 # would turn an UNSAT hard formula into a satisfiable one.
@@ -45,43 +47,50 @@ def _preprocess_wcnf(wcnf):
             new_hard.append(new_clause)
         wcnf.hard = new_hard
 
-    # Search only shorter clauses containing an indexed literal. Retaining
-    # unchecked clauses when the comparison budget expires is equivalent.
-    if len(wcnf.hard) < 50_000:
-        by_length = {}
-        unique = sorted({frozenset(c) for c in wcnf.hard}, key=lambda c: (len(c), tuple(sorted(c))))
-        remaining = 4 * sum(len(c) for c in unique)
+    # Index only strictly shorter clauses. Bound candidate comparisons by
+    # input size so a shared literal cannot cause a quadratic scan.
+    subsumption_applied = len(wcnf.hard) < 50_000
+    if subsumption_applied:
+        unique = set()
+        for clause in wcnf.hard:
+            _check_encoding_deadline(cfg, "subsumption")
+            unique.add(frozenset(clause))
+        unique = sorted(unique, key=lambda c: (len(c), tuple(sorted(c))))
+        by_size = {size: {} for size in (1, 2, 3)}
+        comparisons_left = 4 * sum(map(len, unique))
         retained = []
+
+        def subsumed(cs):
+            nonlocal comparisons_left
+            for size in range(1, min(len(cs), 4)):
+                index = by_size[size]
+                for lit in cs:
+                    for sc in index.get(lit, ()):
+                        _check_encoding_deadline(cfg, "subsumption")
+                        if comparisons_left == 0:
+                            return False
+                        comparisons_left -= 1
+                        if sc.issubset(cs):
+                            return True
+            return False
+
         for cs in unique:
+            _check_encoding_deadline(cfg, "subsumption")
             if not cs:
                 retained = [[]]
                 break
-            subsumed = False
-            for length in range(1, min(3, len(cs) - 1) + 1):
-                index = by_length.get(length, {})
-                for lit in sorted(cs):
-                    for candidate in index.get(lit, ()):
-                        if remaining <= 0:
-                            break
-                        remaining -= 1
-                        if candidate.issubset(cs):
-                            subsumed = True
-                            break
-                    if subsumed or remaining <= 0:
-                        break
-                if subsumed or remaining <= 0:
-                    break
-            if subsumed:
+            if comparisons_left and subsumed(cs):
                 continue
             retained.append(sorted(cs))
             if len(cs) <= 3:
-                by_length.setdefault(len(cs), {}).setdefault(min(cs), []).append(cs)
+                by_size[len(cs)].setdefault(min(cs), []).append(cs)
         wcnf.hard = retained
 
+    _check_encoding_deadline(cfg, "WCNF simplification")
     removed = orig_hard - len(wcnf.hard)
     if removed > 0:
         print(f"  [wcnf-preprocess] removed {removed} hard clauses "
-              f"(units: {len(units)}, subsumption applied)")
+              f"(units: {len(units)}, subsumption: {subsumption_applied})")
 
 
 def _check_encoding_deadline(cfg, phase_name=""):
@@ -111,7 +120,7 @@ def build_wcnf(problem, encoding, cfg, collect_timings=False):
     processed_problem, preprocess_meta = preprocess_problem(
         prepared, scale_limit=cfg.preprocess_scale_limit,
         enable_integerize=cfg.preprocess_integerize,
-        enable_optimizations=cfg.enable_preprocess)
+        enable_optimizations=cfg.enable_preprocess, deadline=cfg.encoding_deadline)
     preprocess_meta['lrn_auxiliaries'] = lrn_aux
     problem = processed_problem
     if collect_timings:
@@ -195,7 +204,7 @@ def build_wcnf(problem, encoding, cfg, collect_timings=False):
     wcnf._weight_gcd = weight_gcd
 
     # WCNF-level preprocessing: unit propagation and subsumption
-    _preprocess_wcnf(wcnf)
+    _preprocess_wcnf(wcnf, cfg)
 
     wcnf.topw = sum(wcnf.wght) + 1
     wcnf._encoding_stats['simplified'] = _formula_counts(wcnf)
@@ -214,31 +223,54 @@ def build_wcnf(problem, encoding, cfg, collect_timings=False):
     return wcnf, name2idx, vpool
 
 
-def solve_rc2(wcnf, phases=None):
+def solve_rc2(wcnf, phases=None, timeout=0):
+    """Return (cost, model); UNSAT is (-1, []), timeout is (-1, None).
+
+    A positive timeout isolates RC2 in a child process because native SAT
+    calls can ignore interrupts. The child is killed and reaped on timeout.
+    """
+    if timeout > 0:
+        deadline = time.monotonic() + timeout
+        worker = (
+            "import sys,pickle; sys.path.insert(0,sys.argv[1]); "
+            "from solver.solve import solve_rc2; from pysat.formula import WCNF; "
+            "nv,hard,soft,weights,topw,phases=pickle.load(sys.stdin.buffer); "
+            "w=WCNF(); w.nv=nv; w.hard=hard; w.soft=soft; w.wght=weights; w.topw=topw; "
+            "pickle.dump(solve_rc2(w,phases),sys.stdout.buffer)"
+        )
+        payload = pickle.dumps((wcnf.nv, wcnf.hard, wcnf.soft, wcnf.wght, wcnf.topw, phases),
+                               protocol=pickle.HIGHEST_PROTOCOL)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return -1, None
+        try:
+            completed = subprocess.run(
+                [sys.executable, '-c', worker, str(Path(__file__).resolve().parents[1])],
+                input=payload, capture_output=True, timeout=remaining, check=True)
+        except subprocess.TimeoutExpired:
+            return -1, None
+        except subprocess.CalledProcessError as exc:
+            raise RuntimeError('RC2 worker failed: ' + exc.stderr.decode(errors='replace')) from exc
+        result = pickle.loads(completed.stdout)
+        return (-1, None) if time.monotonic() >= deadline else result
+    solver = None
     try:
         solver = RC2(wcnf, solver='glucose42', adapt=True, exhaust=True, trim=3)
         if phases:
-            try:
-                solver.oracle.set_phases(phases)
-            except Exception:
-                pass
+            solver.oracle.set_phases(phases)
         solution = solver.compute()
-
-        if solution is None:
+        return (-1, []) if solution is None else (solver.cost, solution)
+    except TimeoutError:
+        raise
+    except Exception as exc:
+        raise RuntimeError(f'RC2 failed: {exc}') from exc
+    finally:
+        if solver is not None:
             solver.delete()
-            return -1, []
-
-        cost = solver.cost
-        assignment = solution
-        solver.delete()
-
-        return cost, assignment
-
-    except Exception as e:
-        raise RuntimeError(f"RC2 failed: {e}")
 
 
 def solve_external(wcnf, workdir, solver_path, timeout=0, greedy_cost=None, *, backend=None, solver_args=None):
+    deadline = time.monotonic() + timeout if timeout and timeout > 0 else None
     with tempfile.NamedTemporaryFile(suffix='.wcnf', dir=workdir, delete=False) as f:
         wcnf_path = f.name
     try:
@@ -249,15 +281,16 @@ def solve_external(wcnf, workdir, solver_path, timeout=0, greedy_cost=None, *, b
             cmd.extend(['-printSoln', '-printSoln-old-format'])
         if backend == 'UWRMAXSAT' and '-m' not in (solver_args or []):
             cmd.extend(['-m', '-bm'])
-        if timeout and timeout > 0 and backend not in ('UWRMAXSAT', 'EVALMAXRES'):
-            cmd.append(f'-cpu-lim={int(timeout)}')
         cmd.extend(solver_args or [])
         cmd.append(wcnf_path)
         wcnf._external_command = cmd
+        remaining = deadline - time.monotonic() if deadline is not None else None
+        if remaining is not None and remaining <= 0:
+            return -1, None, 'TIMEOUT'
         timed_out = False
         try:
             proc = subprocess.run(cmd, capture_output=True, text=True,
-                                  timeout=int(timeout) + 30 if timeout and timeout > 0 else None)
+                                  timeout=remaining)
             output, returncode = proc.stdout or '', proc.returncode
             accepted_codes = (0, 10, 20, 30) if backend else (0, 1, 10, 20, 30)
             if returncode not in accepted_codes:
@@ -293,7 +326,7 @@ def solve_external(wcnf, workdir, solver_path, timeout=0, greedy_cost=None, *, b
         if not model_lines and wcnf.nv:
             if status in ('OPTIMAL', 'FEASIBLE'):
                 return -1, None, 'INVALID'
-            return -1, None, 'TIMEOUT' if timed_out or timeout else 'UNKNOWN'
+            return -1, None, 'TIMEOUT' if timed_out else 'UNKNOWN'
         tokens = ' '.join(model_lines).split()
         if len(tokens) == 1 and len(tokens[0]) == wcnf.nv and set(tokens[0]) <= {'0', '1'}:
             assignment = [i if bit == '1' else -i for i, bit in enumerate(tokens[0], 1)]
@@ -336,8 +369,8 @@ def build_and_solve(problem, encoding, cfg, solver='RC2', collect_timings=True, 
     solver_upper = solver.upper()
     ext_solver_status = None
     if solver_upper == 'RC2':
-        cost, assignment = solve_rc2(wcnf)
-        ext_solver_status = 'OPTIMAL' if cost >= 0 else 'UNSAT'
+        cost, assignment = solve_rc2(wcnf, timeout=cfg.rc2_timeout)
+        ext_solver_status = 'TIMEOUT' if assignment is None else ('OPTIMAL' if cost >= 0 else 'UNSAT')
     elif solver_upper in ('MAXHS', 'WMAXCDCL', 'OPENWBO', 'UWRMAXSAT', 'EVALMAXRES'):
         path_map = {
             'MAXHS': cfg.maxhs_path,

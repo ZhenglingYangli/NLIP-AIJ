@@ -38,7 +38,9 @@ class EncodingConfig:
     maxhs_path, wmaxcdcl_path, openwbo_path : str
         Paths to external MaxSAT solver binaries (override via
         ``NLIP_MAXHS``, ``NLIP_WMAXCDCL``, ``NLIP_OPENWBO`` env vars).
-    external_solver_timeout : int
+    rc2_timeout : float
+        RC2 child-process time limit, including startup (0 = unlimited).
+    external_solver_timeout : float
         Timeout in seconds for external solvers (0 = no timeout).
     enable_preprocess : bool
         Enable optional linear bound propagation and monotonic objective probing.
@@ -73,7 +75,8 @@ class EncodingConfig:
     uwrmaxsat_path: str = os.environ.get("NLIP_UWRMAXSAT", os.path.join(_SOLVER_DIR, "uwrmaxsat"))
     evalmaxres_path: str = os.environ.get("NLIP_EVALMAXRES", os.path.join(_SOLVER_DIR, "EvalMaxSAT"))
     external_solver_args: dict = field(default_factory=dict)
-    external_solver_timeout: int = 0
+    external_solver_timeout: float = 0.0
+    rc2_timeout: float = 0.0
 
     use_lrn: bool = False
     enable_preprocess: bool = True

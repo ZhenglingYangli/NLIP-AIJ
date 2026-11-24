@@ -4,6 +4,7 @@ import math
 from typing import Dict, Any, List, Tuple, Optional
 from pysat.formula import IDPool
 from pysat.pb import PBEnc
+from .onehot import _check_deadline
 
 
 def _fa_clauses(a: int, b: int, cin: int, vpool: IDPool, prefix: str
@@ -39,8 +40,10 @@ def mul(
     prefix: str,
     ub_a: int,
     ub_b: int,
-    sense: int = 0
+    sense: int = 0,
+    deadline: float = 0.0
 ) -> Tuple[List[int], List[List[int]]]:
+    _check_deadline(deadline)
     num_bits_a = len(a_bits)
     num_bits_b = len(b_bits)
 
@@ -51,7 +54,9 @@ def mul(
     columns: List[List[int]] = [[] for _ in range(max_col + 2)]
 
     for r_a in range(num_bits_a):
+        _check_deadline(deadline)
         for r_b in range(num_bits_b):
+            _check_deadline(deadline)
             z = vpool.id(f'{prefix}_z_{r_a}_{r_b}')
             if sense == 0:
                 hard_clauses.append([-z, a_bits[r_a]])
@@ -70,11 +75,14 @@ def mul(
     num_bits_y = max(1, ub_product.bit_length())
 
     while len(columns) < num_bits_y:
+        _check_deadline(deadline)
         columns.append([])
 
     fa_cnt = 0
     for col in range(len(columns)):
+        _check_deadline(deadline)
         while len(columns[col]) >= 3:
+            _check_deadline(deadline)
             a, b, cin = columns[col].pop(), columns[col].pop(), columns[col].pop()
             s, cout, cls = _fa_clauses(a, b, cin, vpool, f'{prefix}_fa{col}_{fa_cnt}')
             fa_cnt += 1
@@ -96,6 +104,7 @@ def mul(
 
     y_bits: List[int] = []
     for col in range(num_bits_y):
+        _check_deadline(deadline)
         if col < len(columns) and columns[col]:
             y_bits.append(columns[col][0])
         else:
@@ -105,7 +114,9 @@ def mul(
 
     # Overflow bits beyond num_bits_y must be zero (ub constraint)
     for col in range(num_bits_y, len(columns)):
+        _check_deadline(deadline)
         for lit in columns[col]:
+            _check_deadline(deadline)
             hard_clauses.append([-lit])
 
     return y_bits, hard_clauses
@@ -152,15 +163,17 @@ def mul_cached(
     ub_a: int,
     ub_b: int,
     sense: int = 0,
-    cache: Optional[MulCache] = None
+    cache: Optional[MulCache] = None,
+    deadline: float = 0.0
 ) -> Tuple[List[int], List[List[int]], int]:
+    _check_deadline(deadline)
     if cache is not None:
         key = MulCache.make_key(a_bits, b_bits, sense)
         cached = cache.get(key)
         if cached is not None:
             return cached[0], [], cached[1]  # Reuse bits, no new clauses
 
-    y_bits, hard_clauses = mul(a_bits, b_bits, vpool, prefix, ub_a, ub_b, sense)
+    y_bits, hard_clauses = mul(a_bits, b_bits, vpool, prefix, ub_a, ub_b, sense, deadline=deadline)
     ub_product = ub_a * ub_b
 
     if cache is not None:
@@ -174,8 +187,10 @@ def decompose_sequential(
     vpool: IDPool,
     prefix: str,
     sense: int = 0,
-    cache: Optional[MulCache] = None
+    cache: Optional[MulCache] = None,
+    deadline: float = 0.0
 ) -> Tuple[List[int], List[List[int]], int]:
+    _check_deadline(deadline)
     if len(omega) == 0:
         return [], [], 1
 
@@ -189,16 +204,17 @@ def decompose_sequential(
     _, _, ub2, bits2 = omega[1]
 
     acc_bits, clauses, acc_ub = mul_cached(
-        bits1, bits2, vpool, f'{prefix}_mul_1_2', ub1, ub2, sense, cache
+        bits1, bits2, vpool, f'{prefix}_mul_1_2', ub1, ub2, sense, cache, deadline=deadline
     )
     hard_clauses.extend(clauses)
 
     for k in range(2, len(omega)):
+        _check_deadline(deadline)
         _, _, ub_k, bits_k = omega[k]
         acc_bits, clauses, acc_ub = mul_cached(
             acc_bits, bits_k, vpool,
             f'{prefix}_mul_1to{k}_and_{k+1}',
-            acc_ub, ub_k, sense, cache
+            acc_ub, ub_k, sense, cache, deadline=deadline
         )
         hard_clauses.extend(clauses)
 
@@ -209,8 +225,10 @@ def decompose_binary_tree(
     vpool: IDPool,
     prefix: str,
     sense: int = 0,
-    cache: Optional[MulCache] = None
+    cache: Optional[MulCache] = None,
+    deadline: float = 0.0
 ) -> Tuple[List[int], List[List[int]], int]:
+    _check_deadline(deadline)
     if len(omega) == 0:
         return [], [], 1
 
@@ -223,15 +241,15 @@ def decompose_binary_tree(
     right = omega[mid:]
 
     left_bits, left_clauses, left_ub = decompose_binary_tree(
-        left, vpool, f'{prefix}_L', sense, cache
+        left, vpool, f'{prefix}_L', sense, cache, deadline=deadline
     )
     right_bits, right_clauses, right_ub = decompose_binary_tree(
-        right, vpool, f'{prefix}_R', sense, cache
+        right, vpool, f'{prefix}_R', sense, cache, deadline=deadline
     )
 
     result_bits, mul_clauses, result_ub = mul_cached(
         left_bits, right_bits, vpool, f'{prefix}_mul',
-        left_ub, right_ub, sense, cache
+        left_ub, right_ub, sense, cache, deadline=deadline
     )
 
     all_clauses = left_clauses + right_clauses + mul_clauses
@@ -246,9 +264,11 @@ def encode_term_decomp(
     lb_map: Dict[str, int] = None,
     sense: int = 0,
     strategy: str = "sequential",
-    cache: Optional[MulCache] = None
+    cache: Optional[MulCache] = None,
+    deadline: float = 0.0
 ) -> Tuple[Dict[int, Tuple[int, int]], List[List[int]]]:
 
+    _check_deadline(deadline)
     term_vars = term.get('vars', {}) or {}
     c = int(term.get('c', 1))
 
@@ -257,12 +277,14 @@ def encode_term_decomp(
 
     omega = []
     for var_name, power in sorted(term_vars.items()):
+        _check_deadline(deadline)
         q = name2idx[var_name]
         ub = int(problem['variables'][var_name]['ub'])
         num_bits = max(1, ub.bit_length())
         bits = [vpool.id(f'x_{q}@{r}') for r in range(num_bits)]
 
         for _ in range(int(power)):
+            _check_deadline(deadline)
             omega.append((var_name, q, ub, bits))
 
     if len(omega) == 0:
@@ -273,15 +295,16 @@ def encode_term_decomp(
 
     if strategy == "binary_tree":
         result_bits, hard_clauses, _ = decompose_binary_tree(
-            omega, vpool, prefix, sense, cache
+            omega, vpool, prefix, sense, cache, deadline=deadline
         )
     else:
         result_bits, hard_clauses, _ = decompose_sequential(
-            omega, vpool, prefix, sense, cache
+            omega, vpool, prefix, sense, cache, deadline=deadline
         )
 
     z_mapping = {}
     for r, y_var in enumerate(result_bits):
+        _check_deadline(deadline)
         weight = c * (2 ** r)
         z_mapping[r] = (y_var, weight)
 

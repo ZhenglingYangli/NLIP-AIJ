@@ -143,6 +143,8 @@ def verify_solution(problem, result, encoding, vpool=None):
             if not matches:
                 raise ValueError(f'objective mismatch: computed={computed}, reported={reported}')
         report['valid'] = True
+    except TimeoutError:
+        raise
     except Exception as exc:
         report['errors'].append(str(exc))
     return report['valid'], report

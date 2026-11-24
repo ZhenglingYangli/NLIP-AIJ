@@ -2,6 +2,7 @@
 
 from pysat.formula import WCNF, IDPool
 from pysat.card import CardEnc
+from .onehot import _check_deadline
 from tools.arithmetic import bound_clauses
 import math
 
@@ -11,21 +12,23 @@ class EncodingDriverError(Exception):
 
 
 def add_domain_constraints(problem, encoding, name2idx, vpool, wcnf, cfg=None):
+    deadline = getattr(cfg, 'encoding_deadline', 0.0) if cfg else 0.0
     x_fn = lambda q, r: vpool.id(f'x_{q}@{r}')
     use_map = cfg is not None and getattr(cfg, 'use_mapping_shift', False)
 
     for var_name, meta in problem.get('variables', {}).items():
+        _check_deadline(deadline)
         q = name2idx[var_name]
         lb = int(meta.get('lb', 0))
         ub = int(meta.get('ub', 0))
         ub_eff = (ub - lb) if use_map else ub
 
         if encoding == 'OH':
-            _ensure_oh_structure(wcnf, x_fn, q, ub_eff, vpool)
+            _ensure_oh_structure(wcnf, x_fn, q, ub_eff, vpool, deadline)
         elif encoding == 'UNA':
-            _ensure_una_structure(wcnf, x_fn, q, ub_eff)
+            _ensure_una_structure(wcnf, x_fn, q, ub_eff, deadline)
         elif encoding == 'BIN':
-            _ensure_bin_structure(wcnf, x_fn, q, ub_eff)
+            _ensure_bin_structure(wcnf, x_fn, q, ub_eff, deadline)
         else:
             raise EncodingDriverError(f"Unsupported encoding: {encoding}")
 
@@ -76,7 +79,7 @@ def _is_all_binary(problem):
     return True
 
 
-def _encode_objective_binary_linear(problem, name2idx, vpool, encoding='BIN'):
+def _encode_objective_binary_linear(problem, name2idx, vpool, encoding='BIN', deadline=0):
     """Fast McCormick linearization for objectives over binary variables.
     Each quadratic term x_i*x_j is linearized via z <-> (x_i AND x_j).
     Works for BIN (x_q@0 = value), OH/UNA (x_q@1 = indicator for value 1)."""
@@ -92,6 +95,7 @@ def _encode_objective_binary_linear(problem, name2idx, vpool, encoding='BIN'):
     neg_soft_total = 0
 
     for t in terms:
+        _check_deadline(deadline)
         c_val = int(t.get('c', 0))
         if c_val == 0:
             continue
@@ -138,6 +142,7 @@ def _encode_objective_binary_linear(problem, name2idx, vpool, encoding='BIN'):
                 var_lits.append(lit)
         z = var_lits[0]
         for i in range(1, len(var_lits)):
+            _check_deadline(deadline)
             pair_key = (min(z, var_lits[i]), max(z, var_lits[i]))
             if pair_key in product_cache:
                 z = product_cache[pair_key]
@@ -164,8 +169,10 @@ def encode_objective(problem, encoding, name2idx, vpool, cfg=None):
     lb_map = {vn: int(info.get('lb', 0))
               for vn, info in problem.get('variables', {}).items()} if use_map else {}
 
+    deadline = getattr(cfg, 'encoding_deadline', 0.0) if cfg else 0.0
+    _check_deadline(deadline)
     if _is_all_binary(problem):
-        w = _encode_objective_binary_linear(problem, name2idx, vpool, encoding=encoding)
+        w = _encode_objective_binary_linear(problem, name2idx, vpool, encoding=encoding, deadline=deadline)
         w._binary_fastpath = True
         return w
 
@@ -181,11 +188,11 @@ def encode_objective(problem, encoding, name2idx, vpool, cfg=None):
 
     if effective_encoding == 'OH':
         from .onehot import encode_objective_oh
-        return encode_objective_oh(problem, name2idx, vpool, lb_map=lb_map)
+        return encode_objective_oh(problem, name2idx, vpool, lb_map=lb_map, deadline=deadline)
 
     elif effective_encoding == 'UNA':
         from .unary import encode_objective_una
-        return encode_objective_una(problem, name2idx, vpool, lb_map=lb_map)
+        return encode_objective_una(problem, name2idx, vpool, lb_map=lb_map, deadline=deadline)
 
     elif effective_encoding == 'BIN':
         if use_decomp:
@@ -197,30 +204,37 @@ def encode_objective(problem, encoding, name2idx, vpool, cfg=None):
                 decomp_strategy=getattr(cfg, 'decomp_strategy', 'sequential'),
                 decomp_exact=getattr(cfg, 'decomp_exact', True),
                 decomp_shared=getattr(cfg, 'decomp_shared', True),
-                external_and_cache=getattr(cfg, '_global_and_cache', None)
+                external_and_cache=getattr(cfg, '_global_and_cache', None), deadline=deadline
             )
         else:
             from .binary import encode_objective_bin
             global_cache = getattr(cfg, '_global_and_cache', None) if cfg else None
             return encode_objective_bin(problem, name2idx, vpool, lb_map=lb_map,
-                                        external_and_cache=global_cache)
+                                        external_and_cache=global_cache, deadline=deadline)
 
     raise EncodingDriverError(f"Unsupported encoding: {encoding}")
 
 
-def _ensure_oh_structure(w, x_fn, q, ub, vpool):
-    lits = [x_fn(q, r) for r in range(ub + 1)]
+def _ensure_oh_structure(w, x_fn, q, ub, vpool, deadline=0):
+    lits = []
+    for r in range(ub + 1):
+        _check_deadline(deadline)
+        lits.append(x_fn(q, r))
     for clause in CardEnc.equals(lits=lits, bound=1, vpool=vpool):
+        _check_deadline(deadline)
         w.append(clause)
 
 
-def _ensure_una_structure(w, x_fn, q, ub):
+def _ensure_una_structure(w, x_fn, q, ub, deadline=0):
     w.append([x_fn(q, 0)])
     for r in range(1, ub + 1):
+        _check_deadline(deadline)
         w.append([-x_fn(q, r), x_fn(q, r - 1)])
 
 
-def _ensure_bin_structure(w, x_fn, q, ub):
+def _ensure_bin_structure(w, x_fn, q, ub, deadline=0):
     num_bits = max(1, ub.bit_length())
     bits = [x_fn(q, r) for r in range(num_bits)]
-    w.extend(bound_clauses(bits, ub))
+    for clause in bound_clauses(bits, ub):
+        _check_deadline(deadline)
+        w.append(clause)

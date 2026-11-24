@@ -54,6 +54,12 @@ print(result["objective_value"], ok)  # 2 True
 
 Successful results are checked against the original constraints and objective. Use `objective_value_exact` in the API or `OPTExact` in CLI output for exact objective values. `--no-preprocess` disables optional propagation and probing while preserving variable shifts and exact normalization.
 
+## Time limits
+
+The CPMpy integration repairs from [NLIPSat-Toolkit PR #1](https://github.com/ZhenglingYangli/NLIPSat-Toolkit/pull/1) are incorporated into this experiment package. `EncodingConfig.encoding_deadline` sets an absolute encoding deadline, checked within preprocessing and encoding loops. `rc2_timeout` and `external_solver_timeout` set solver budgets in seconds. A positive RC2 budget runs it in a child process that is terminated and reaped on timeout. `UNSAT`, `TIMEOUT` and `UNKNOWN` remain distinct.
+
+For a single CLI invocation, `--timeout SECONDS` sets the overall runtime limit. Formal experiments use the process-tree supervision in `jobs/` and the budgets in the MatriCS guide.
+
 ## Core tests
 
 From the repository root, using the configured environment:

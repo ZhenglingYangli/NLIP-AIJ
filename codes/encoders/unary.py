@@ -4,7 +4,7 @@ import time
 from typing import Dict, Any, List, Tuple, Optional
 from pysat.formula import WCNF, IDPool
 
-from .onehot import _EncodingTimeout
+from .onehot import _EncodingTimeout, _check_deadline
 
 
 def _compute_difference_def8(
@@ -57,6 +57,7 @@ def encode_term_una(
     for_objective: bool = False,
     deadline: float = 0.0
 ) -> Tuple[Dict[Tuple, Tuple[int, int]], List[List[int]], List[Tuple[List[int], int]]]:
+    _check_deadline(deadline)
     term_vars = term.get('vars', {}) or {}
     c = int(term.get('c', 1))
 
@@ -170,7 +171,8 @@ def encode_objective_una(
     problem: Dict[str, Any],
     name2idx: Dict[str, int],
     vpool: IDPool,
-    lb_map: Dict[str, int] = None
+    lb_map: Dict[str, int] = None,
+    deadline: float = 0.0
 ) -> WCNF:
     w = WCNF()
     terms = problem['objective'].get('terms', [])
@@ -179,7 +181,7 @@ def encode_objective_una(
         return w
 
     z_mapping, hard_clauses, direct_soft = encode_polynomial_una(
-        terms, problem, name2idx, vpool, "z_una_obj", lb_map, for_objective=True
+        terms, problem, name2idx, vpool, "z_una_obj", lb_map, for_objective=True, deadline=deadline
     )
 
     for clause in hard_clauses:

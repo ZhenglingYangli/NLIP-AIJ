@@ -4,7 +4,7 @@ from typing import Dict, Any, List, Tuple
 from pysat.formula import WCNF, IDPool
 from pysat.pb import PBEnc
 
-from .onehot import encode_polynomial_oh
+from .onehot import encode_polynomial_oh, _check_deadline
 from .unary import encode_polynomial_una
 from .binary import encode_polynomial_bin
 
@@ -22,13 +22,15 @@ def _linearize_binary_quadratic_constraint(
     vpool: IDPool,
     constr_idx: int,
     encoding: str = 'BIN',
-    global_product_cache: Dict[Tuple[int, int], int] = None
+    global_product_cache: Dict[Tuple[int, int], int] = None,
+    deadline: float = 0.0
 ) -> Tuple[bool, List[int], List[int], List[List[int]]]:
     if not terms:
         return False, [], [], []
 
     all_binary = True
     for t in terms:
+        _check_deadline(deadline)
         vs = t.get('vars', {}) or {}
         for vn, p in vs.items():
             p = int(p)
@@ -51,8 +53,10 @@ def _linearize_binary_quadratic_constraint(
 
     # Decide whether the entire constraint supports this path before publishing
     # any product in the shared cache: a later fallback discards local clauses.
-    if any(len([v for v, p in t.get('vars', {}).items() if p > 0]) > 2 for t in terms):
-        return False, [], [], []
+    for t in terms:
+        _check_deadline(deadline)
+        if sum(p > 0 for p in t.get('vars', {}).values()) > 2:
+            return False, [], [], []
 
     # BIN encoding: x_q@0 (bit 0) = variable value for binary {0,1}
     # OH encoding:  x_q@1 (indicator for value 1) = variable value
@@ -66,6 +70,7 @@ def _linearize_binary_quadratic_constraint(
     product_cache = global_product_cache if global_product_cache is not None else {}
 
     for t in terms:
+        _check_deadline(deadline)
         c_val = int(t.get('c', 0))
         if c_val == 0:
             continue
@@ -113,7 +118,8 @@ def _encode_polynomial_bin_mixed_decomp(
     and_cache: Dict = None,
     decomp_threshold: int = 3,
     decomp_strategy: str = "sequential",
-    decomp_cache=None
+    decomp_cache=None,
+    deadline: float = 0.0
 ) -> Tuple[Dict, List[List[int]]]:
     import math
     from .decomposition import encode_term_decomp
@@ -140,13 +146,13 @@ def _encode_polynomial_bin_mixed_decomp(
             z_map, hard = encode_term_decomp(
                 term, problem, name2idx, vpool,
                 f"{z_prefix}_decomp_t{t_idx}", lb_map,
-                sense=0, strategy=decomp_strategy, cache=decomp_cache
+                sense=0, strategy=decomp_strategy, cache=decomp_cache, deadline=deadline
             )
         else:
             z_map, hard, _ = encode_term_bin(
                 term, problem, name2idx, vpool,
                 f"{z_prefix}_t{t_idx}", lb_map,
-                for_objective=False, and_cache=and_cache
+                for_objective=False, and_cache=and_cache, deadline=deadline
             )
 
         for key, val in z_map.items():
@@ -171,6 +177,7 @@ def encode_constraint(
     decomp_strategy: str = "sequential",
     decomp_cache=None
 ) -> List[List[int]]:
+    _check_deadline(deadline)
     # Support both 'terms'/'lhs' and 'rel'/'sense' field names
     terms = constraint.get('terms', constraint.get('lhs', []))
     rel = constraint.get('rel', constraint.get('sense', '<='))
@@ -201,7 +208,7 @@ def encode_constraint(
         lin_prod_cache = and_cache.setdefault('_lin_prod_cache', {})
     success, lin_lits, lin_weights, lin_hard = _linearize_binary_quadratic_constraint(
         terms, variables, name2idx, vpool, constr_idx, encoding=encoding,
-        global_product_cache=lin_prod_cache
+        global_product_cache=lin_prod_cache, deadline=deadline
     )
     if success and lin_lits:
         hard_clauses = lin_hard
@@ -228,12 +235,12 @@ def encode_constraint(
             and_cache=and_cache,
             decomp_threshold=decomp_threshold,
             decomp_strategy=decomp_strategy,
-            decomp_cache=decomp_cache
+            decomp_cache=decomp_cache, deadline=deadline
         )
     elif encoding == 'BIN':
         z_mapping, hard_clauses, _ = encode_polynomial_bin(
             terms, problem, name2idx, vpool, z_prefix, lb_map,
-            external_and_cache=and_cache
+            external_and_cache=and_cache, deadline=deadline
         )
     else:
         raise ValueError(f"Unknown encoding: {encoding}")
@@ -243,6 +250,7 @@ def encode_constraint(
     pb_weights = []
 
     for _, (z_var, value) in z_mapping.items():
+        _check_deadline(deadline)
         val = int(value)
         if val != 0:
             pb_lits.append(z_var)
@@ -264,6 +272,7 @@ def _encode_pb_constraint(
     deadline: float = 0.0
 ) -> List[List[int]]:
     """Encode a pseudo-Boolean constraint into SAT clauses."""
+    _check_deadline(deadline)
     from math import gcd
     from functools import reduce
 
@@ -381,7 +390,7 @@ def _encode_pb_constraint(
         use_adder = True
     elif force_adder:
         use_adder = True
-    elif deadline > 0 and _time.time() > deadline:
+    elif deadline > 0 and deadline - _time.time() < 1.0:
         use_adder = True
     elif len(norm_lits) > 10:
         # Prefer adder when PBEnc is likely to blow up, or when weights are huge
@@ -391,7 +400,7 @@ def _encode_pb_constraint(
         elif num_bits > 32 and adder_proxy > 200_000:
             use_adder = True
     if use_adder:
-        adder_clauses = _encode_pb_adder(norm_lits, norm_weights, norm_bound, rel, vpool)
+        adder_clauses = _encode_pb_adder(norm_lits, norm_weights, norm_bound, rel, vpool, deadline=deadline)
         if adder_clauses is not None:
             hard_clauses.extend(adder_clauses)
             return hard_clauses
@@ -413,21 +422,23 @@ def _encode_pb_adder(
     weights: List[int],
     bound: int,
     rel: str,
-    vpool: IDPool
+    vpool: IDPool,
+    deadline: float = 0.0
 ) -> List[List[int]]:
 
+    _check_deadline(deadline)
     if rel in ('<=', '<'):
-        return _encode_pb_adder_leq(lits, weights, bound, vpool)
+        return _encode_pb_adder_leq(lits, weights, bound, vpool, deadline=deadline)
     elif rel in ('>=', '>'):
         flipped_lits = [-l for l in lits]
         new_bound = sum(weights) - bound
         if new_bound < 0:
             return [[]]
-        return _encode_pb_adder_leq(flipped_lits, weights, new_bound, vpool)
+        return _encode_pb_adder_leq(flipped_lits, weights, new_bound, vpool, deadline=deadline)
     elif rel in ('=', '=='):
         # Share one exact sum and fix its output bits. Two independent
         # inequality circuits hide low-bit equalities from unit propagation.
-        return _encode_pb_adder_leq(lits, weights, bound, vpool, exact=True)
+        return _encode_pb_adder_leq(lits, weights, bound, vpool, exact=True, deadline=deadline)
     return None
 
 
@@ -436,9 +447,11 @@ def _encode_pb_adder_leq(
     weights: List[int],
     bound: int,
     vpool: IDPool,
-    exact: bool = False
+    exact: bool = False,
+    deadline: float = 0.0
 ) -> List[List[int]]:
     """Encode a weighted sum <= bound, or = bound when exact is true."""
+    _check_deadline(deadline)
     import math
 
     n = len(lits)
@@ -510,6 +523,7 @@ def _encode_pb_adder_leq(
     bit_columns = [[] for _ in range(num_bits + n)]
 
     for i, (lit, w) in enumerate(zip(lits, weights)):
+        _check_deadline(deadline)
         for b in range(num_bits):
             if (w >> b) & 1:
                 bit_columns[b].append(lit)
@@ -521,7 +535,9 @@ def _encode_pb_adder_leq(
     for iteration in range(max_iters):
         any_reduced = False
         for b in range(len(bit_columns)):
+            _check_deadline(deadline)
             while len(bit_columns[b]) >= 3:
+                _check_deadline(deadline)
                 a = bit_columns[b].pop()
                 bb = bit_columns[b].pop()
                 c = bit_columns[b].pop()
@@ -536,6 +552,7 @@ def _encode_pb_adder_leq(
                 any_reduced = True
 
             while len(bit_columns[b]) == 2:
+                _check_deadline(deadline)
                 a = bit_columns[b].pop()
                 bb = bit_columns[b].pop()
                 s, cout, cls = full_adder(a, bb, None, vpool)
@@ -594,6 +611,7 @@ def _encode_pb_adder_leq(
     active = None  # None means "always active" (true)
 
     for b in range(max_bit, -1, -1):
+        _check_deadline(deadline)
         bound_bit = (bound >> b) & 1
         s_lit = sum_bit_map.get(b)
 
@@ -649,6 +667,7 @@ def encode_all_constraints(
         decomp_cache = MulCache(enabled=decomp_shared)
 
     for idx, constraint in enumerate(problem.get('constraints', [])):
+        _check_deadline(deadline)
         if constraint.get('type') == 'disjunction':
             clauses = _encode_disjunction(
                 constraint, problem, name2idx, vpool, encoding, idx, lb_map,
@@ -709,6 +728,7 @@ def _encode_disjunction(
     indicator_lits: List[int] = []
 
     for branch_idx, branch in enumerate(branches):
+        _check_deadline(deadline)
         indicator = vpool.id(f'_disj_{constr_idx}_{branch_idx}')
         indicator_lits.append(indicator)
 

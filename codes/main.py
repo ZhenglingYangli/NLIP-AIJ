@@ -16,6 +16,10 @@ from encoders.onehot import _EncodingTimeout
 from solver.config import EncodingConfig, MAINLINE_SOLVER, mainline_config
 from tools.verify import verify_solution, format_verification_report
 
+class _RunTimeout(TimeoutError):
+    pass
+
+
 _timeout_ctx = {"problem_name": "", "encoding": "", "solver": "", "t_start": 0}
 
 def load_json_problem(input_path):
@@ -304,8 +308,7 @@ def config_from_arguments(args):
     return cfg
 
 
-def main(argv=None):
-    args = parse_arguments(argv)
+def _run_cli(args):
 
     problem_name = os.path.basename(args.input)
     t_start = time.time()
@@ -319,14 +322,7 @@ def main(argv=None):
         })
 
         def _on_timeout(signum, frame):
-            elapsed = time.time() - _timeout_ctx["t_start"]
-            print(f"\n>>> Benchmark {_timeout_ctx['problem_name']} "
-                  f"Encoding {_timeout_ctx['encoding']} "
-                  f"Solver {_timeout_ctx['solver']} "
-                  f"Status TIMEOUT OPT N/A "
-                  f"TimeTotal {elapsed:.3f}")
-            sys.stdout.flush()
-            os._exit(0)
+            raise _RunTimeout('Total runtime deadline exceeded')
 
         signal.signal(signal.SIGALRM, _on_timeout)
         signal.alarm(args.timeout)
@@ -343,6 +339,8 @@ def main(argv=None):
 
     try:
         problem = load_problem(args.input, k=args.k)
+    except _RunTimeout:
+        raise
     except Exception as e:
         print(f"Error: failed to parse problem file - {e}", file=sys.stderr)
         time_total = time.time() - t_start
@@ -405,7 +403,8 @@ def main(argv=None):
         # Refresh external solver timeout using the actual remaining wall-clock budget.
         if args.timeout:
             remaining = max(0.0, float(args.timeout) - (time.time() - t_start))
-            cfg.external_solver_timeout = max(0, int(remaining - 5.0))
+            cfg.external_solver_timeout = max(0.001, remaining)
+            cfg.rc2_timeout = max(0.001, remaining)
         result = build_and_solve(problem, args.encoding, cfg, solver=args.solver, output_path=args.output)
     except (EncodingTimeoutError, _EncodingTimeout) as e:
         time_total = time.time() - t_start
@@ -417,6 +416,8 @@ def main(argv=None):
               f"Encoding {enc_str} Solver {args.solver} "
               f"Status TIMEOUT OPT N/A TimeTotal {time_total:.3f}")
         return 1
+    except _RunTimeout:
+        raise
     except Exception as e:
         print(f"Error: solving failed - {e}", file=sys.stderr)
         if args.verbose:
@@ -442,6 +443,24 @@ def main(argv=None):
     print("\n" + format_result(result, problem_name, time_read, time_total))
 
     return 1 if result.get('solver_status') == 'INVALID' else 0
+
+
+def main(argv=None):
+    args = parse_arguments(argv)
+    alarm = bool(args.timeout and hasattr(signal, 'SIGALRM'))
+    previous_handler = signal.getsignal(signal.SIGALRM) if alarm else None
+    try:
+        return _run_cli(args)
+    except _RunTimeout:
+        ctx = _timeout_ctx
+        elapsed = time.time() - ctx['t_start']
+        print(f">>> Benchmark {ctx['problem_name']} Encoding {ctx['encoding']} "
+              f"Solver {ctx['solver']} Status TIMEOUT OPT N/A TimeTotal {elapsed:.3f}")
+        return 0
+    finally:
+        if alarm:
+            signal.alarm(0)
+            signal.signal(signal.SIGALRM, previous_handler)
 
 
 if __name__ == "__main__":

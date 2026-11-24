@@ -4,6 +4,16 @@ from fractions import Fraction
 from math import gcd
 from functools import reduce
 import copy
+import time
+
+
+class EncodingTimeoutError(TimeoutError, RuntimeError):
+    pass
+
+
+def _check_deadline(deadline):
+    if deadline > 0 and time.time() >= deadline:
+        raise EncodingTimeoutError("Encoding deadline exceeded during preprocessing")
 
 
 def _safe_fraction(val: Any, denom_cap: int = 10**6) -> Fraction:
@@ -43,18 +53,20 @@ def _binom(n: int, k: int) -> int:
     return num // den
 
 
-def _expand_term_by_shifts(term: Dict[str, Any], shift_map: Dict[str, int]) -> Tuple[List[Tuple[Fraction, Dict[str, int]]], Fraction]:
+def _expand_term_by_shifts(term: Dict[str, Any], shift_map: Dict[str, int], deadline=0) -> Tuple[List[Tuple[Fraction, Dict[str, int]]], Fraction]:
     c = _safe_fraction(term.get('c', 1), 10**6)
     var_pows: Dict[str, int] = {vn: int(ep) for vn, ep in term.get('vars', {}).items()}
 
     # Incremental expansion
     partial: List[Tuple[Fraction, Dict[str, int]]] = [(c, {})]
+    _check_deadline(deadline)
     for v, k in var_pows.items():
         d = int(shift_map.get(v, 0))
         new_partial: List[Tuple[Fraction, Dict[str, int]]] = []
         for coeff, vp in partial:
             # (Y + d)^k = sum_{j=0}^{k} C(k,j) * Y^j * d^(k-j)
             for j in ([k] if d == 0 else range(k + 1)):
+                _check_deadline(deadline)
                 coef2 = coeff * Fraction(_binom(k, j), 1) * (Fraction(d, 1) ** (k - j))
                 vp2 = dict(vp)
                 if j > 0:
@@ -66,6 +78,7 @@ def _expand_term_by_shifts(term: Dict[str, Any], shift_map: Dict[str, int]) -> T
     acc: Dict[Tuple[Tuple[str, int], ...], Fraction] = {}
     const_sum = Fraction(0, 1)
     for coeff, vp in partial:
+        _check_deadline(deadline)
         if not vp:
             const_sum += coeff
         else:
@@ -84,11 +97,12 @@ def _expand_term_by_shifts(term: Dict[str, Any], shift_map: Dict[str, int]) -> T
     return items, const_sum
 
 
-def _canonicalize_polynomial(terms: List[Dict[str, Any]], shift_map: Dict[str, int]) -> Tuple[List[Dict[str, Any]], Fraction]:
+def _canonicalize_polynomial(terms: List[Dict[str, Any]], shift_map: Dict[str, int], deadline=0) -> Tuple[List[Dict[str, Any]], Fraction]:
     items_total: Dict[Tuple[Tuple[str, int], ...], Fraction] = {}
     const_total = Fraction(0, 1)
     for t in terms or []:
-        items, const_sum = _expand_term_by_shifts(t, shift_map)
+        _check_deadline(deadline)
+        items, const_sum = _expand_term_by_shifts(t, shift_map, deadline)
         const_total += const_sum
         for coef, vp in items:
             key = tuple(sorted(vp.items()))
@@ -101,10 +115,11 @@ def _canonicalize_polynomial(terms: List[Dict[str, Any]], shift_map: Dict[str, i
     return new_terms, const_total
 
 
-def _reduce_binary_powers(terms: List[Dict[str, Any]], variables: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _reduce_binary_powers(terms: List[Dict[str, Any]], variables: Dict[str, Dict[str, Any]], deadline=0) -> List[Dict[str, Any]]:
 
     acc: Dict[Tuple[Tuple[str, int], ...], Fraction] = {}
     for t in terms or []:
+        _check_deadline(deadline)
         coeff = _safe_fraction(t.get('c', 0), 10**6)
         if coeff == 0:
             continue
@@ -112,6 +127,7 @@ def _reduce_binary_powers(terms: List[Dict[str, Any]], variables: Dict[str, Dict
         raw_vars = t.get('vars', {}) or {}
         reduced_vars: Dict[str, int] = {}
         for vn, power in raw_vars.items():
+            _check_deadline(deadline)
             p = int(power)
             if p <= 0:
                 continue
@@ -132,20 +148,35 @@ def _reduce_binary_powers(terms: List[Dict[str, Any]], variables: Dict[str, Dict
     return merged
 
 
-def _integerize_polynomial(terms, rhs, denom_cap, scale_limit):
-    coeffs = [_safe_fraction(t.get('c', 0), denom_cap) for t in terms]
-    rhs_frac = _safe_fraction(rhs, denom_cap) if rhs is not None else None
-    values = coeffs + ([rhs_frac] if rhs_frac is not None else [])
-    factor = _lcm_many([v.denominator for v in values])
+def _integerize_polynomial(terms, rhs, denom_cap, scale_limit, deadline=0):
+    values = []
+    factor = 1
+    for t in terms:
+        _check_deadline(deadline)
+        value = _safe_fraction(t.get('c', 0), denom_cap)
+        values.append(value)
+        factor = _lcm(factor, value.denominator)
+    if rhs is not None:
+        value = _safe_fraction(rhs, denom_cap)
+        values.append(value)
+        factor = _lcm(factor, value.denominator)
     if factor > scale_limit:
         raise ValueError(f'exact integerization requires scale {factor}, limit is {scale_limit}')
-    scaled = [int(v * factor) for v in values]
-    divisor = _gcd_many(scaled)
-    int_coeffs = [v // divisor for v in scaled[:len(coeffs)]]
-    int_rhs = scaled[-1] // divisor if rhs_frac is not None else None
-    result = [{'c': c, 'vars': dict(t.get('vars', {}))}
-              for t, c in zip(terms, int_coeffs) if c]
+    scaled, divisor = [], 0
+    for value in values:
+        _check_deadline(deadline)
+        integer = int(value * factor)
+        scaled.append(integer)
+        divisor = gcd(divisor, abs(integer))
+    divisor = divisor or 1
+    result = []
+    for t, integer in zip(terms, scaled):
+        _check_deadline(deadline)
+        if integer:
+            result.append({'c': integer // divisor, 'vars': dict(t.get('vars', {}))})
+    int_rhs = scaled[-1] // divisor if rhs is not None else None
     return result, int_rhs, (factor, divisor)
+
 
 def _iter_constraint_atoms(constraints: List[Dict[str, Any]]):
     """Yield atoms for dependency checks without treating OR branches as AND."""
@@ -158,38 +189,53 @@ def _iter_constraint_atoms(constraints: List[Dict[str, Any]]):
             yield cons
 
 
-def _probe_binary_variables(terms, variables, constraints):
+def _probe_binary_variables(terms, variables, constraints, deadline=0):
     """Fix only unconstrained binary variables with a globally monotone objective."""
-    constrained = {v for a in _iter_constraint_atoms(constraints)
-                   for t in a.get('terms', []) for v in t.get('vars', {})}
-    slopes = {v: [0, 0] for v, info in variables.items()
-              if info['lb'] == 0 and info['ub'] == 1 and v not in constrained}
+    slopes = {}
+    for v, info in variables.items():
+        _check_deadline(deadline)
+        if info['lb'] == 0 and info['ub'] == 1:
+            slopes[v] = [0, 0]
     if not slopes:
         return {}
+    for a in _iter_constraint_atoms(constraints):
+        _check_deadline(deadline)
+        for t in a.get('terms', []):
+            _check_deadline(deadline)
+            for v in t.get('vars', {}):
+                slopes.pop(v, None)
+        if not slopes:
+            return {}
     for t in terms:
-        c = _safe_fraction(t.get('c', 0))
+        _check_deadline(deadline)
         powers = t.get('vars', {})
         candidates = powers.keys() & slopes.keys()
         if not candidates:
             continue
-        # Eligible binary factors have upper bound one, so their removal
-        # leaves this product unchanged for every candidate in the term.
+        c = _safe_fraction(t.get('c', 0))
+        # Every candidate is binary with upper bound 1, so its removal
+        # leaves the same upper product for all candidates in this term.
         upper_product = 1
-        for name, power in powers.items():
-            upper_product *= variables[name]['ub'] ** power
+        for v, power in powers.items():
+            _check_deadline(deadline)
+            upper_product *= variables[v]['ub'] ** power
         lo, hi = (c, c) if len(powers) == 1 else (min(0, c * upper_product), max(0, c * upper_product))
         for v in candidates:
+            _check_deadline(deadline)
             slopes[v][0] += lo
             slopes[v][1] += hi
     return {v: (1 if lo > 0 else 0) for v, (lo, hi) in slopes.items() if lo > 0 or hi < 0}
 
-def _substitute_fixed_variables(terms, fixed):
+
+def _substitute_fixed_variables(terms, fixed, deadline=0):
     acc = {}
     constant = Fraction(0)
     for t in terms:
+        _check_deadline(deadline)
         coeff = _safe_fraction(t.get('c', 0))
         remaining = {}
         for v, power in t.get('vars', {}).items():
+            _check_deadline(deadline)
             if v in fixed:
                 coeff *= fixed[v] ** power
             else:
@@ -201,14 +247,16 @@ def _substitute_fixed_variables(terms, fixed):
             constant += coeff
     return [{'c': c, 'vars': dict(k)} for k, c in acc.items() if c], constant
 
-def _bound_tightening(constraints, variables, max_rounds=10):
+def _bound_tightening(constraints, variables, max_rounds=10, deadline=0):
     """Propagate exact rational bounds from complete linear constraints."""
     from math import floor, ceil
+    _check_deadline(deadline)
     linear = []
     for con in constraints:
+        _check_deadline(deadline)
         if con.get('type') == 'disjunction':
             continue
-        terms, constant = _canonicalize_polynomial(con.get('terms', []), {})
+        terms, constant = _canonicalize_polynomial(con.get('terms', []), {}, deadline)
         if any(sum(t['vars'].values()) != 1 for t in terms):
             continue
         coeffs = {next(iter(t['vars'])): t['c'] for t in terms}
@@ -218,17 +266,24 @@ def _bound_tightening(constraints, variables, max_rounds=10):
     for _ in range(max_rounds):
         changed = False
         for coeffs, rel, rhs in linear:
-            contributions = {v: sorted((c * variables[v]['lb'], c * variables[v]['ub']))
-                             for v, c in coeffs.items()}
-            sum_min = sum((ends[0] for ends in contributions.values()), Fraction(0))
-            sum_max = sum((ends[1] for ends in contributions.values()), Fraction(0))
+            _check_deadline(deadline)
+            # Maintain the interval sum as each variable is tightened.
+            # A full sweep takes linear work in the number of terms.
+            sum_min = sum_max = Fraction(0)
             for v, c in coeffs.items():
-                info = variables[v]
-                lo, hi = info['lb'], info['ub']
+                _check_deadline(deadline)
+                lo, hi = variables[v]['lb'], variables[v]['ub']
                 if lo > hi:
                     return total
-                old_min, old_max = contributions[v]
-                other_min, other_max = sum_min - old_min, sum_max - old_max
+                sum_min += c * (lo if c > 0 else hi)
+                sum_max += c * (hi if c > 0 else lo)
+            for v, c in coeffs.items():
+                _check_deadline(deadline)
+                info = variables[v]
+                lo, hi = info['lb'], info['ub']
+                own_min = c * (lo if c > 0 else hi)
+                own_max = c * (hi if c > 0 else lo)
+                other_min, other_max = sum_min - own_min, sum_max - own_max
                 new_lo, new_hi = lo, hi
                 if rel in ('<=', '<', '=', '=='):
                     bound = (rhs - other_min) / c
@@ -248,44 +303,46 @@ def _bound_tightening(constraints, variables, max_rounds=10):
                     changed = True
                     if new_lo > new_hi:
                         return total
-                    new_min, new_max = sorted((c * new_lo, c * new_hi))
-                    sum_min += new_min - old_min
-                    sum_max += new_max - old_max
-                    contributions[v] = new_min, new_max
+                    sum_min += c * (new_lo if c > 0 else new_hi) - own_min
+                    sum_max += c * (new_hi if c > 0 else new_lo) - own_max
         if not changed:
             break
     return total
 
 def preprocess_problem(problem, denom_cap=10**6, scale_limit=10**6,
                        enable_min_to_max=True, enable_integerize=True,
-                       enable_optimizations=True):
+                       enable_optimizations=True, deadline=0):
     """Normalize to nonnegative integer variables and a maximization objective.
 
     Normalization preserves mathematical meaning even when optional bound
     propagation and objective probing are disabled.
     """
     from math import ceil, floor
+    _check_deadline(deadline)
     prob = copy.deepcopy({k: v for k, v in problem.items() if k != '_smt_assertions'})
     variables = prob.setdefault('variables', {})
     obj = prob.setdefault('objective', {'sense': 'max', 'terms': []})
     constraints = prob.setdefault('constraints', [])
     for v, info in variables.items():
+        _check_deadline(deadline)
         info['lb'] = ceil(_safe_fraction(info['lb']))
         info['ub'] = floor(_safe_fraction(info['ub']))
     for a in _iter_constraint_atoms(constraints):
+        _check_deadline(deadline)
         a['terms'] = a.get('terms', a.get('lhs', []))
         rel = a.get('rel', a.get('sense', '<='))
         if rel not in ('<=', '<', '>=', '>', '=', '=='):
             raise ValueError(f'unsupported relation: {rel}')
     all_terms = list(obj.get('terms', [])) + [t for a in _iter_constraint_atoms(constraints) for t in a['terms']]
     for t in all_terms:
+        _check_deadline(deadline)
         for v, power in list(t.get('vars', {}).items()):
             if v not in variables or int(power) != power or power < 0:
                 raise ValueError(f'invalid polynomial factor: {v}^{power}')
             if power == 0:
                 del t['vars'][v]
     if enable_optimizations and all(v['lb'] <= v['ub'] for v in variables.values()):
-        _bound_tightening(constraints, variables)
+        _bound_tightening(constraints, variables, deadline=deadline)
     infeasible = any(v['lb'] > v['ub'] for v in variables.values())
     if infeasible:
         constraints.append({'terms': [], 'rel': '==', 'rhs': 1})
@@ -295,8 +352,8 @@ def preprocess_problem(problem, denom_cap=10**6, scale_limit=10**6,
     for i in variables.values():
         i['ub'] -= i['lb']
         i['lb'] = 0
-    terms, constant = _canonicalize_polynomial(obj.get('terms', []), shifts)
-    terms = _reduce_binary_powers(terms, variables)
+    terms, constant = _canonicalize_polynomial(obj.get('terms', []), shifts, deadline)
+    terms = _reduce_binary_powers(terms, variables, deadline)
     sense = str(obj.get('sense', 'max')).lower()
     if sense not in ('max', 'maximize', 'maximum', 'min', 'minimize', 'minimum'):
         raise ValueError(f'unsupported objective sense: {sense}')
@@ -306,22 +363,22 @@ def preprocess_problem(problem, denom_cap=10**6, scale_limit=10**6,
         constant = -constant
     if not enable_integerize and any(_safe_fraction(t['c']).denominator != 1 for t in terms):
         raise ValueError('fractional coefficients require integerization')
-    terms, _, (lcm, divisor) = _integerize_polynomial(terms, None, denom_cap, scale_limit * 100)
-    probed = _probe_binary_variables(terms, variables, constraints) if enable_optimizations and not infeasible else {}
+    terms, _, (lcm, divisor) = _integerize_polynomial(terms, None, denom_cap, scale_limit * 100, deadline)
+    probed = _probe_binary_variables(terms, variables, constraints, deadline) if enable_optimizations and not infeasible else {}
     if probed:
-        terms, added = _substitute_fixed_variables(terms, probed)
+        terms, added = _substitute_fixed_variables(terms, probed, deadline)
         constant += added * Fraction(divisor, lcm)
 
     def transform_atom(a):
-        ts, const = _canonicalize_polynomial(a['terms'], shifts)
-        ts = _reduce_binary_powers(ts, variables)
+        ts, const = _canonicalize_polynomial(a['terms'], shifts, deadline)
+        ts = _reduce_binary_powers(ts, variables, deadline)
         if probed:
-            ts, added = _substitute_fixed_variables(ts, probed)
+            ts, added = _substitute_fixed_variables(ts, probed, deadline)
             const += added
         rhs = _safe_fraction(a.get('rhs', 0)) - const
         if not enable_integerize and (rhs.denominator != 1 or any(t['c'].denominator != 1 for t in ts)):
             raise ValueError('fractional constraints require integerization')
-        ts, rhs, _ = _integerize_polynomial(ts, rhs, denom_cap, scale_limit)
+        ts, rhs, _ = _integerize_polynomial(ts, rhs, denom_cap, scale_limit, deadline)
         return {'terms': ts, 'rel': a.get('rel', a.get('sense', '<=')), 'rhs': rhs}
 
     prob['constraints'] = [
