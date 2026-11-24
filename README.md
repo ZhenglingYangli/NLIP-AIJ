@@ -1,37 +1,44 @@
 # NLIP-AIJ experiment artifact
 
-The main matrix contains 1,265 inputs, 58 family/method configurations and 22,220 instance runs. QPLIB, DiverseSAT application models and MIPO compare OH/UNA/BIN, with BIN+D additionally on MIPO, using MaxHS, WMaxCDCL, UWrMaxSAT and EvalMaxRes. Optimization baselines are SCIP-native, Z3, CP-SAT and Gurobi. Bounded SMT uses four encodings with CaDiCaL, plus Z3 and cvc5. LRN is disabled.
+Read [MATRICS_GUIDE.md](MATRICS_GUIDE.md) for the experiment matrix, fixed solver versions and arguments, installation, submission and result collection. First-time operators start at section 4.
 
-Start with the [complete experiment and MatriCS handbook](docs/EXPERIMENT_HANDBOOK.md), covering the matrix, solver versions, source layout, installation and step-by-step operation.
+The main experiment contains **1,265 inputs, 58 configurations and 22,220 runs** across QPLIB, DiverseSAT application models, MIPO and bounded SMT. LRN is disabled. A separate decomposition-sharing ablation contains 1,020 runs.
 
-## Two operator files
+## Layout
 
-- `jobs/generate_scripts.py` checks dependencies and generates the Slurm campaign and submission script.
-- `jobs/goSolver.py` runs instances, using the shared time/memory supervision and original-problem verification.
-
-This retains the original generator/runner division. Slurm calls `goSolver.py` automatically. The generated `submit.sh` submits the array and dependent analysis and saves both job IDs. Resource supervision and solver dispatch remain internal modules. NLIP parsing, encoding and solving are timed together.
-
-```bash
-# Select the actual interpreter and configure this machine first.
-export AIJ_PYTHON="$PWD/.venv-solvers/bin/python"
-"$AIJ_PYTHON" jobs/tools/configure_cluster.py
-"$AIJ_PYTHON" jobs/tools/check_environment.py
-"$AIJ_PYTHON" jobs/generate_scripts.py --profile smoke --output results/smoke-new-solvers
-bash results/smoke-new-solvers/submit.sh
-# Inspect the computing-node test log before formal submission.
-"$AIJ_PYTHON" jobs/generate_scripts.py --output results/main-new-solvers
-bash results/main-new-solvers/submit.sh
-sacct -j "$(cat results/main-new-solvers/array_job_id.txt)" --format=JobID,State,ExitCode,Elapsed
+```text
+MATRICS_GUIDE.md        Complete MatriCS operating guide
+matrics.env.example    Paths, modules and license settings to fill in
+jobs/                  Experiment generation and execution
+  generate_scripts.py  Generate the Slurm campaign and submit.sh
+  goSolver.py          Run instances and supervise resources
+  internal/            Shared matrix, scheduling and solver dispatch
+  tools/               Site configuration and environment checks
+  data/                MIPO input preparation
+  smoke/               Four small models with known answers
+codes/                 Installable NLIPSat package and core tests
+benchmarks/manifests/   Fixed instance lists
+analysis/              Result aggregation, plots and export
+tests/                 Experiment runner and analysis tests
 ```
 
-The formal allocation is bigmem-amd, one exclusive node per configuration, 60 physical cores, 970 GiB and one active configuration at a time. Each instance receives one core, 16 GiB and 3,600 seconds for startup through solving, followed by up to 120 seconds for original-problem verification. The outer cap is 4,000 seconds. Results distinguish optimal, feasible, timeout, memory limit, invalid, license and unsupported outcomes.
+## Run on MatriCS
 
-See [solver versions and configuration](docs/SOLVER_VERSIONS.md), [code and experiment overview](docs/CODE_GUIDE.md), [experiment setup](jobs/README.md), [step-by-step cluster handoff](docs/COLLABORATOR_GUIDE.md) and [solver installation and API](codes/README.md).
+Follow the guide to copy and edit `matrics.env.example`, install the solvers and generate `jobs/config.cluster.json`. Then, from the project root:
 
-## Development and handoff
+```bash
+source matrics.env
+"$AIJ_PYTHON" jobs/generate_scripts.py --profile smoke --output results/smoke-new-solvers
+bash results/smoke-new-solvers/submit.sh
+```
 
-The Guangzhou development directory is `/home/ubuntu/#科研项目/MIS/3-NLIP_AIJ`. The separate Ubuntu checkout `/home/ubuntu/NLIP-Journal-Artifact-publish` is used to prepare GitHub delivery. Collaborators pull that repository into `/scratch/scherif/NLIP/AIJ/NLIP-Journal-Artifact-` on MatriCS. These are stages of one delivery chain, not separate experiments.
+After the compute-node checks and all 58 small-test configurations pass:
 
-Site-specific `jobs/config.cluster.json`, Python environments, solver binaries, licenses, raw benchmarks and results stay on their respective machines. Synchronizing source code does not copy those site settings. Formal plans must be generated on MatriCS after pulling the intended commit and completing the computing-node checks.
+```bash
+"$AIJ_PYTHON" jobs/generate_scripts.py --output results/main-new-solvers
+bash results/main-new-solvers/submit.sh
+```
 
-Raw records are under `results/<campaign>/runs/`, the combined table is `results.csv`, legacy-format tables are in `sumup/` and comparisons/plots are in `analysis/`. Historical formal LRN records are not modified by this experiment.
+The generated submission script saves job IDs and schedules analysis after the array finishes. Raw records and summary tables are written under `results/<campaign>/`. Local configuration, environments, external solver binaries, full datasets, licenses and results are excluded from Git.
+
+For individual models and the Python API, see [codes/README.md](codes/README.md).

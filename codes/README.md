@@ -1,235 +1,61 @@
-# NLIPSat: Satisfiability-Based Nonlinear Integer Programming Encoding Toolkit
+# NLIPSat package
 
-NLIPSat is a research prototype for encoding nonlinear integer programming (NLIP) instances into weighted MaxSAT and solving them with modern MaxSAT engines. The toolkit supports multiple encoding strategies, optional order decomposition for high-degree terms, lightweight preprocessing, and solution verification. It also includes benchmark collections used in our experiments.
+This directory contains the installable NLIPSat solver and its Python API. For the formal experiment matrix, fixed dependencies and MatriCS setup, use [MATRICS_GUIDE.md](../MATRICS_GUIDE.md).
 
-## AIJ execution release 0.2.0
+## Structure
 
-This is the unique AIJ execution code, tagged `aij-code-v0.2` in the enclosing
-AIJ repository. See [the correctness review](../../01-experiment-config/CORRECTNESS_REVIEW.md)
-for the repaired mathematical defects, validation and implications for historical results.
-In particular, QPLIB cross coefficients must also carry the factor 1/2.
+- `codes/` contains input parsers, preprocessing, encoders, SAT/MaxSAT adapters and original-problem verification.
+- `nlipsat/` exposes the Python API and installed command.
+- `solvers/baseline/` contains direct-model baseline adapters.
+- `examples/` contains a small JSON model and an API example.
+- `tests/` contains core correctness and interface tests.
+- `pyproject.toml` defines the installable package.
 
-Successful results are always checked in the original problem. `--verify` prints
-the report; `--no-preprocess` disables optional bound propagation and probing.
-Variable shifts, minimization conversion and exact normalization remain active.
-Use `objective_value_exact` (API) or `OPTExact` (CLI) for exact objective values.
-Final witness verification is timed separately as `TimeVerify`.
+The outer `codes/` is the package root; the inner `codes/` is its Python module. They contain different files.
 
-The code package contains no bundled external MaxSAT binaries or bulk benchmarks.
-Set `NLIP_MAXHS`, `NLIP_WMAXCDCL`, and `NLIP_OPENWBO` to existing solver binaries.
-The AIJ benchmark manifests are in `../../03-benchmarks/manifests`. On the current
-Ubuntu host the historical input root for the examples below is:
+## Run one model
+
+After setting up the project environment, execute from the repository root:
 
 ```bash
-export BENCH_ROOT='/home/ubuntu/#科研项目/MIS/0-NLIP/NLIP_composes/experiment/benchmarks'
-python -m unittest discover -s tests -v
+source matrics.env
+"$AIJ_PYTHON" codes/codes/main.py codes/examples/example4.json --preset mainline --verify
+"$AIJ_PYTHON" codes/codes/main.py --help
 ```
 
-## Repository Structure
+The example has original objective 2. The `mainline` preset selects BIN+D with RC2, exact multiplication, shared substructures and preprocessing, with LRN disabled. Formal experiment jobs select their own registered backends through `jobs/internal/experiment.py`.
 
-```text
-.
-├── codes/
-├── examples/
-├── nlipsat/
-├── solvers/baseline/
-└── tests/
-```
-
-## Benchmark Collections
-
-The historical manifests reference these benchmark groups at the input root:
-
-- `benchmarks/diverse_sat`: 108 CNF instances
-- `benchmarks/qplib_fully_passed`: 137 QPLIB instances
-- `benchmarks/smt_0_10`: 150SMT-LIB2 instances
-
-## Requirements
-
-- Python 3.9 or newer; the current mainline environment uses Python 3.12.
-- [PySAT](https://pysathq.github.io/) with PB support (`python-sat[pb]`) and Pindakaas for the exact-sum encoding
-- Z3 Python bindings (`z3-solver`) for SMT-LIB2 parsing
-
-On the Guangzhou Ubuntu execution host, mainline and formal batch jobs use the same environment,
-`../.venv-solvers/bin/python`, with versions recorded in
-[`../jobs/requirements.txt`](../jobs/requirements.txt). Older dated environment
-exports describe historical runs. Other sites select their actual interpreter in
-`../jobs/config.cluster.json`; the MatriCS checkout historically uses `.venv`.
-See [the site-specific operating guide](../docs/COLLABORATOR_GUIDE.md).
-
-## Quick Start
-
-Install this package on Linux from this directory:
+To install the API and command in the same environment:
 
 ```bash
-python3 -m venv .venv
-.venv/bin/python -m pip install .
-.venv/bin/nlipsat examples/example4.json --preset mainline --verify
+"$AIJ_PYTHON" -m pip install --no-deps -e ./codes
+"$AIJ_PYTHON" -m nlipsat codes/examples/example4.json --preset mainline --verify
 ```
 
-The example returns `OPTIMAL` with original objective 2 and successful verification.
-The installed command works outside the source directory with an absolute input
-path. `python -m nlipsat` invokes the same command-line implementation.
-RC2 is included through PySAT; external MaxSAT backends are optional.
-For the frozen research environment, install `../jobs/requirements-core.txt`
-before this package. The batch runner and external comparison dependencies
-are separate from the single-instance interface.
-
-Run from this code-package root on the Ubuntu execution host:
-
-```bash
-NLIP_PYTHON=../.venv-solvers/bin/python
-"$NLIP_PYTHON" codes/main.py path/to/problem.json --preset mainline --verify
-```
-
-`--preset mainline` selects the adopted complete **BIN+D + RC2** method:
-decomposition threshold 3, sequential decomposition, exact multiplication,
-shared substructures, preprocessing and weight-GCD normalization enabled,
-and LRN disabled. Successful solutions are checked against the original problem.
-Timeout, output, verification-report and Diverse-SAT `--k` options remain available.
-Options that change the selected method are rejected with this preset; omit
-`--preset mainline` to run explicit ablations or other solver backends.
-
-The generic CLI retains its historical defaults (OH + RC2, no decomposition),
-and the generic Python API retains its existing defaults. Recent experimental
-lazy, bound-search and interval variants are not part of the mainline preset.
-
-Examples using the same environment:
-
-```bash
-"$NLIP_PYTHON" codes/main.py "$BENCH_ROOT/qplib_fully_passed/QPLIB_0067.qplib" --preset mainline
-"$NLIP_PYTHON" codes/main.py "$BENCH_ROOT/qplib_fully_passed/QPLIB_0067.qplib" -e BIN
-"$NLIP_PYTHON" codes/main.py "$BENCH_ROOT/qplib_fully_passed/QPLIB_0067.qplib" -e UNA -s RC2
-"$NLIP_PYTHON" codes/main.py "$BENCH_ROOT/diverse_sat/ais/ais10.cnf" --k 2 --preset mainline
-```
+The dependency installation is covered in the MatriCS guide. Use `-s NONE -o output.wcnf` to export a formula without solving. JSON, QPLIB, bounded SMT-LIB2 and CNF inputs are supported. CNF with `--k 2` or larger represents a DiverseSAT optimization model. SMT translation rejects unsupported assertions and variables without justified finite bounds.
 
 ## Python API
 
-NLIPSat also exposes a small Python API for constructing and inspecting the
-generated WCNF formula object before solving:
-
-```bash
-"$NLIP_PYTHON" examples/api_example.py
-```
+Run from the repository root after installation:
 
 ```python
-from nlipsat import load_problem, mainline_config, MAINLINE_SOLVER, \
-                    build_wcnf, solve, verify_solution
+from nlipsat import load_problem, mainline_config, MAINLINE_SOLVER, build_wcnf, solve, verify_solution
 
-problem = load_problem("examples/example4.json")  # .qplib .smt2 .cnf also accepted
+problem = load_problem("codes/examples/example4.json")
 cfg = mainline_config()
-
 wcnf, name2idx, vpool = build_wcnf(problem, "BIN", cfg)
-print(len(wcnf.hard), len(wcnf.soft), wcnf.wght, wcnf.topw)
-# 18 4 [1, 2, 2, 4] 10
-
-wcnf.to_file("example.wcnf")
 result = solve(problem, encoding=cfg.encoding, config=cfg, solver=MAINLINE_SOLVER)
 ok, report = verify_solution(problem, result)
-print(result["objective_value"], ok)
-# 2 True
+print(result["objective_value"], ok)  # 2 True
 ```
 
-`mainline_config()` returns a fresh configuration each time. Formal matrix jobs
-can reuse its BIN+D settings while selecting their registered solver backend
-separately; the preset does not change the experiment matrix.
+Successful results are checked against the original constraints and objective. Use `objective_value_exact` in the API or `OPTExact` in CLI output for exact objective values. `--no-preprocess` disables optional propagation and probing while preserving variable shifts and exact normalization.
 
-### Generate WCNF only (no solving)
+## Core tests
 
-If you only want to build the weighted CNF encoding (for inspection or for running a third-party MaxSAT solver manually), use solver `NONE`:
+From the repository root, using the configured environment:
 
 ```bash
-python3 codes/main.py "$BENCH_ROOT/qplib_fully_passed/QPLIB_0067.qplib" -e BIN -s NONE -o out.wcnf
-python3 codes/main.py "$BENCH_ROOT/smt_0_10/calypto/problem-005596.cvc.1.smt2" -e BIN --decomp -s NONE -o out.wcnf
+"$AIJ_PYTHON" -m unittest discover -s codes/tests -v
+"$AIJ_PYTHON" codes/tests/test_api.py
 ```
-
-## Supported Input Formats
-
-### JSON
-
-Native NLIP instances can be provided in JSON format.
-
-### QPLIB
-
-QPLIB instances are parsed through `codes/tools/qplib_parser.py`.
-
-### SMT-LIB2
-
-SMT2 benchmark files are parsed through `codes/tools/smt2_parser.py`.
-This parser uses `z3-solver` for extracting bounds and constraints. AIJ execution is strict: unsupported assertions and variables requiring artificial finite bounds are rejected. Translations reporting skipped assertions or defaulted bounds are also rejected before encoding.
-
-### CNF for Diverse-SAT
-
-When the input file is a CNF instance and `--k` is set to a value of at least `2`, the toolkit interprets the instance as a Diverse-SAT problem and builds the corresponding quadratic objective.
-
-## Main Command-Line Options
-
-```text
-usage: python3 codes/main.py input [options]
-```
-
-Common options:
-
-- `--preset mainline`: select complete BIN+D + RC2 with exact shared multiplication and LRN disabled
-- `-e, --encoding {OH,UNA,BIN}`: choose the encoding strategy
-- `-s, --solver {RC2,MAXHS,WMAXCDCL,OPENWBO,NONE}`: choose the solver backend (`NONE` = build WCNF only)
-- `--decomp`: enable order decomposition for high-degree terms in binary encoding
-- `--decomp-threshold N`: minimum degree that triggers decomposition
-- `--decomp-strategy {sequential,binary_tree}`: choose the decomposition strategy
-- `--decomp-relaxed`: use relaxed multiplication semantics
-- `--no-decomp-shared`: disable shared substructure caching
-- `--no-weight-gcd`: disable soft-weight normalization by GCD
-- `--no-preprocess`: disable preprocessing
-- `--verify`: verify the decoded solution
-- `--timeout T`: set a timeout in seconds
-- `--k K`: number of diverse models for CNF input (`K >= 2`)
-- `-o, --output FILE`: save the generated WCNF to a file
-- `-v, --verbose`: print detailed statistics
-
-## Example Workflows
-
-### Solve a QPLIB instance with the default encoding
-
-```bash
-python3 codes/main.py "$BENCH_ROOT/qplib_fully_passed/QPLIB_0067.qplib"
-```
-
-### Solve with binary encoding and decomposition
-
-```bash
-python3 codes/main.py "$BENCH_ROOT/qplib_fully_passed/QPLIB_0067.qplib" -e BIN --decomp
-```
-
-### Solve an SMT-LIB2 instance and verify the result
-
-```bash
-python3 codes/main.py "$BENCH_ROOT/smt_0_10/calypto/problem-005596.cvc.1.smt2" --verify
-```
-
-### Build a WCNF file without further processing
-
-```bash
-python3 codes/main.py "$BENCH_ROOT/qplib_fully_passed/QPLIB_0067.qplib" -s NONE -o out.wcnf
-```
-
-## Output
-
-For each run, the tool prints a compact summary line containing:
-
-- benchmark name
-- encoding
-- solver
-- status
-- objective value
-- MaxSAT cost
-- variable and clause statistics
-- read, encoding, solving, and total runtime
-
-With `--verbose`, the tool prints additional encoding and timing details. With `--verify`, it prints the original-problem verification that is already performed for every successful result.
-
-## References
-
-If you use NLIPSat, please cite the following papers:
-
-- Zhengling Yangli, Zhifei Zheng, Sami Cherif, Rui Sá Shibasaki, and Chu-Min Li. *NLIPSat: Satisfiability-Based Nonlinear Integer Programming Encoding Toolkit*. In Proceedings of the 29th International Conference on Theory and Applications of Satisfiability Testing (SAT 2026), LIPIcs, to appear.
-- Zhifei Zheng, Sami Cherif, Rui Sá Shibasaki, Chu-Min Li, and Jialu Zhang. *Maximum Satisfiability Formulations for Nonlinear Integer Programming*. In Proceedings of the 19th European Conference on Logics in Artificial Intelligence (JELIA 2025), LNCS 16094, pp. 190--206, Springer, 2025. DOI: [10.1007/978-3-032-04590-4_14](https://doi.org/10.1007/978-3-032-04590-4_14).

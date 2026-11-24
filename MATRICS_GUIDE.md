@@ -1,17 +1,8 @@
-# NLIP-AIJ 实验方案与 MatriCS 完整操作手册
+# NLIP-AIJ 实验与 MatriCS 操作手册
 
-更新日期为 2026-11-24。本文面向接手实验的合作者，集中说明实验方案、求解器、源码结构和操作步骤。命令按顺序在 MatriCS 的 Linux 终端执行，除非段落明确写了广州或 Windows。【必改】字段和 `CHANGE_ME`、`USER@HOST` 必须替换成实际值。
+更新于 2026-11-24。内容依次为实验方案、求解器设置、文件结构、安装运行和配置修改。首次接手从第 4 部分开始操作，第 1 至 3 部分用于查阅。
 
-## 阅读顺序
-
-- 第 1 部分明确本次跑什么、跑多少、怎样计时和判定结果。
-- 第 2 部分记录固定求解器版本、广州实际程序、启动参数和模式。
-- 第 3 部分说明各目录、主要文件和开发交付位置。
-- 第 4 部分从新建目录、GitHub 拉取开始，部署环境并完成小测和正式运行。
-- 第 5 部分说明如何修改路径、资源、版本和实验组合，以及续跑、收结果。
-- 第 6 部分记录交付验证与正式运行前仍需在 MatriCS 完成的事项。
-
-日常只使用两个入口。`jobs/generate_scripts.py` 生成作业，`jobs/goSolver.py` 运行实例。实验组合定义统一保存在 `jobs/internal/experiment.py`，NLIP 和 DiverseSAT 均采用这组文件名及位置。
+除上传文件外，命令均在 MatriCS 终端执行。【必改】字段以及 `CHANGE_ME`、`USER@HOST` 必须替换成实际值。
 
 ## 1. 实验方案与配置
 
@@ -25,7 +16,7 @@
 | 有界 SMT | 150 | OH、UNA、BIN、BIN+D × CaDiCaL | Z3、cvc5 | 6 | 900 |
 | 合计 | 1,265 | | | 58 | 22,220 |
 
-BIN+D 使用已有分解设置。SCIP、Gurobi 和 CP-SAT 直接接收有界整数多项式模型，非线性乘积通过相应乘积约束或有界中间变量表达。cvc5 用于 SMT 判定。核心仍保留 RC2 开发与回归接口，但主批不选 RC2、Open-WBO、CPLEX 或两条 MILP 扩展路线。
+SCIP、Gurobi 和 CP-SAT 直接建模有界整数多项式，cvc5 用于 SMT 判定。BIN+D 的分解设置见 1.4 节。
 
 独立的共享消融为 MIPO/WMaxCDCL 和 SMT/CaDiCaL 共 1,020 次运行，与主批分开。
 
@@ -45,68 +36,59 @@ BIN+D 使用已有分解设置。SCIP、Gurobi 和 CP-SAT 直接接收有界整�
 | 最长配置的预留时间 | 19 小时 |
 | 单实例预算 | 启动、解析、编码、求解合计 3600 秒，验解另给 120 秒，外围 4000 秒 |
 
-小测每个配置只有一个输入，使用一个工作进程，每个 Slurm 元素申请五分钟。Ubuntu 对数组执行路径的验证按单进程依次执行；60 个实例并行时的集群资源分配需要在 MatriCS 验证。
+小测每个配置只有一个输入，使用一个工作进程，每个 Slurm 元素申请五分钟。
 
 ### 1.3 执行和验解
 
-生成器展开实例清单并记录本批方法与预算。提交后，Slurm 分配资源，`goSolver.py` 取得对应配置，内部运行器逐个启动 worker。worker 解析输入，进行预处理和编码或直接建模，再调用后端。监督器从进程启动开始计时，控制整棵进程树的资源。后端返回可行解时进入单独的验解阶段，核对原始约束和目标。
-
-每个实例的 `result.json` 记录终态、时间、模型信息及可用的赋值证据。全部结束后汇成 `results.csv`，再生成 `analysis/` 和 `sumup/`。OPTIMAL、FEASIBLE、SAT、UNSAT、TIMEOUT、OOM、INVALID、LICENSE_LIMIT 和 UNSUPPORTED 分开保留；没有终态记录的是 PENDING。
-
-SAT 或可行优化解必须通过原问题验解。UNSAT 没有可行赋值可验，本套实验记录后端的不可行终态，不提供每个 UNSAT 的独立证明检查。公开参考解核对和小域穷举测试用于验证相关接口与建模语义。
+生成器读取清单并生成作业。Slurm 分配资源后，运行器解析、编码或建模、调用求解器，并对返回的赋值检查原始约束和目标。每个实例保存 `result.json`，整批汇总为 `results.csv`，统计表和图保存在 `analysis/`。
 
 ### 1.4 正式统计口径
 
-优化任务只有 `OPTIMAL` 且原问题验解通过才计入“解出”。只有可行解时记为 `FEASIBLE`，不会计为已证明最优。SMT 的 `SAT` 必须有验解通过的赋值；`UNSAT` 记录求解器终态。`TIMEOUT`、`OOM`、`UNSUPPORTED`、`LICENSE_LIMIT`、`ERROR`、`INVALID` 分开保留。`PENDING` 表示尚无终态记录。
+优化任务只有 `OPTIMAL` 且原问题验解通过才计入“解出”。只有可行解时记为 `FEASIBLE`，不会计为已证明最优。SMT 的 `SAT` 必须有验解通过的赋值；`UNSAT` 记录求解器终态，不附独立不可满足证明。`TIMEOUT`、`OOM`、`UNSUPPORTED`、`LICENSE_LIMIT`、`ERROR`、`INVALID` 分开保留。`PENDING` 表示尚无终态记录。
 
 论文分析时间使用 `solve_wall_seconds`，包含启动、解析、建模或编码以及求解。原问题验解时间单独记录。完整配置的 PAR-2 将未成功的运行按两倍求解预算计入；仍有 PENDING 的配置暂不计算 PAR-2。小测时间不作为论文性能结果。
 
-主批分解方法 BIN+D 使用阈值 3、顺序分解、精确乘法和子结构共享。共享消融仅将 `decomp_shared` 改为 false，保持其余设置相同。主批和消融均关闭 LRN，既有 LRN 2,040 条正式原始记录保持只读。
+主批分解方法 BIN+D 使用阈值 3、顺序分解、精确乘法和子结构共享。共享消融仅将 `decomp_shared` 改为 false，保持其余设置相同。主批和消融均关闭 LRN。
 
 ## 2. 求解器版本、程序与运行方式
 
-本次固定下列版本。后续出现新发布时，先决定是否开启新的性能批次，再更换程序。运行期间不自动追踪最新版。
-
-本文以 `ROOT=/home/ubuntu/#科研项目/MIS/3-NLIP_AIJ` 表示广州活动目录。以下广州路径用于说明已测程序；MatriCS 由自己的 `jobs/config.cluster.json` 指向本站安装。
+使用下列固定版本，同一批次运行期间保持版本和参数不变。
 
 ### 2.1 版本与来源
 
-| 求解器或接口 | 本次选用版本 | 官方核对来源 | 本次处理 |
-| --- | --- | --- | --- |
-| UWrMaxSAT | 2.0.6 | [正式发布 v2.0.6](https://github.com/marekpiotrow/UWrMaxSat/releases/tag/v2.0.6)，2026-08-06 | 从 2.0.0 更新并重新编译，保留 MaxPre 和 SCIP 阶段 |
-| MaxHS | 修订版 ASchidler/MaxHS，提交 `b1e21b67cfe8ac2fd6b2dfb4b2b6b74eb3585740` | [维护仓库的对应源码](https://github.com/ASchidler/MaxHS/commit/b1e21b67cfe8ac2fd6b2dfb4b2b6b74eb3585740) | 用核对当日维护分支最新提交重新编译，SCIP 后端 |
-| WMaxCDCL | MSE2026 独立版 | [官方 2026 求解器发布包](https://zenodo.org/records/21358014)，`solver-WMaxCDCL2026.zip` | 保留。未找到该独立变体更晚的公开发布 |
-| EvalMaxRes | MSE2026 发布版 | [官方 2026 求解器发布包](https://zenodo.org/records/21358014)，`solver-EvalMaxRes.zip` | 保留。未找到该变体更晚的公开发布 |
-| CaDiCaL，用于正式 SMT 编码 | 3.1.0 | [正式发布 rel-3.1.0](https://github.com/arminbiere/cadical/releases/tag/rel-3.1.0)，2026-11-17 | 从 PySAT 内置 3.0 调用更新为独立 3.1.0 可执行程序 |
-| SCIP | 10.1.0 | [正式发布 v10.1.0](https://github.com/scipopt/scip/releases/tag/v10.1.0) | 已是核对当日最新正式版，保留 |
-| PySCIPOpt | 6.3.0 | [官方 PyPI 包](https://pypi.org/project/PySCIPOpt/) | 本机与 PyPI 最新版本一致 |
-| Z3 | 5.4.1.0 | [官方 PyPI 包](https://pypi.org/project/z3-solver/) | 本机包和引擎版本一致，已是最新 |
-| OR-Tools / CP-SAT | 9.15.6755 | [官方 PyPI 包](https://pypi.org/project/ortools/) | 已是最新，保留 |
-| Gurobi | 14.0.0 | [官方 PyPI 包](https://pypi.org/project/gurobipy/) | Python 包与引擎均为 14.0.0，保留 |
-| cvc5 | 1.4.2 | [官方 PyPI 包](https://pypi.org/project/cvc5/) | 已是最新，保留 |
-| PySAT | 1.9.dev24 | [官方 PyPI 包](https://pypi.org/project/python-sat/) | 最新已发布开发版，保留 |
+| 求解器或接口 | 固定版本 | 下载来源 |
+| --- | --- | --- |
+| UWrMaxSAT | 2.0.6 | [正式发布 v2.0.6](https://github.com/marekpiotrow/UWrMaxSat/releases/tag/v2.0.6)，2026-08-06 |
+| MaxHS | 修订版 ASchidler/MaxHS，提交 `b1e21b67cfe8ac2fd6b2dfb4b2b6b74eb3585740` | [维护仓库的对应源码](https://github.com/ASchidler/MaxHS/commit/b1e21b67cfe8ac2fd6b2dfb4b2b6b74eb3585740) |
+| WMaxCDCL | MSE2026 独立版 | [官方 2026 求解器发布包](https://zenodo.org/records/21358014)，`solver-WMaxCDCL2026.zip` |
+| EvalMaxRes | MSE2026 发布版 | [官方 2026 求解器发布包](https://zenodo.org/records/21358014)，`solver-EvalMaxRes.zip` |
+| CaDiCaL，用于正式 SMT 编码 | 3.1.0 | [正式发布 rel-3.1.0](https://github.com/arminbiere/cadical/releases/tag/rel-3.1.0)，2026-11-17 |
+| SCIP | 10.1.0 | [正式发布 v10.1.0](https://github.com/scipopt/scip/releases/tag/v10.1.0) |
+| PySCIPOpt | 6.3.0 | [官方 PyPI 包](https://pypi.org/project/PySCIPOpt/) |
+| Z3 | 5.4.1.0 | [官方 PyPI 包](https://pypi.org/project/z3-solver/) |
+| OR-Tools / CP-SAT | 9.15.6755 | [官方 PyPI 包](https://pypi.org/project/ortools/) |
+| Gurobi | 14.0.0 | [官方 PyPI 包](https://pypi.org/project/gurobipy/) |
+| cvc5 | 1.4.2 | [官方 PyPI 包](https://pypi.org/project/cvc5/) |
+| PySAT | 1.9.dev24 | [官方 PyPI 包](https://pypi.org/project/python-sat/) |
 
-MaxHS 选用的是仍维护的修订版，不以原 `fbacchus/MaxHS` 仓库的旧发布号替代新维护分支。它没有相应的新语义版本号，因此记录实际源码提交。
+MaxHS 使用指定提交，WMaxCDCL 使用独立版。EvalMaxRes 包内程序名为 `EvalMaxSAT`，下载时选择 `solver-EvalMaxRes.zip`。
 
-EvalMaxRes 和 EvalMaxSAT 是不同变体。EvalMaxRes 包内程序名仍叫 `EvalMaxSAT`，帮助输出也使用该名称；这里依据官方包来源和启动设置识别为 EvalMaxRes，不能按可执行文件名字替换为另一个变体。WMaxCDCL 同样区分独立版与附加 SCIP、Open-WBO 阶段的组合版，本实验保持独立版。
+### 2.2 实际程序位置
 
-### 2.2 广州实际可执行文件
+按第 4 部分安装后，`NLIP_SOFTWARE` 为 `$NLIP_PROJECT/solvers/matrics-20261124`。复用已有安装时，在 `matrics.env` 中修改对应路径。
 
-下表中的路径均相对于本页定义的 Ubuntu ROOT，拼接后就是 `jobs/config.cluster.json` 中使用的绝对路径。
-
-| 配置键 | 实际可执行文件 |
+| 配置键 | 实际程序路径 |
 | --- | --- |
-| `MAXHS` | `solvers/20261124/bin/maxhs` |
-| `WMAXCDCL` | `solvers/20261012/WMaxCDCL2026/bin/wmaxcdcl_static` |
-| `UWRMAXSAT` | `solvers/20261124/bin/uwrmaxsat` |
-| `EVALMAXRES` | `solvers/20261123/EvalMaxRes/EvalMaxSAT` |
-| EvalMaxRes 辅助程序 | `solvers/20261123/EvalMaxRes/nuwls` |
-| `CADICAL` | `solvers/20261124/bin/cadical` |
-| SCIP 共享库 | `solvers/20261012/scipoptsuite-10.1.0/lib64/libscip.so.10.1.0` |
+| `MAXHS` | `$NLIP_SOFTWARE/bin/maxhs` |
+| `WMAXCDCL` | `$NLIP_SOFTWARE/bin/wmaxcdcl_static` |
+| `UWRMAXSAT` | `$NLIP_SOFTWARE/bin/uwrmaxsat` |
+| `EVALMAXRES` | `$NLIP_SOFTWARE/bin/EvalMaxSAT` |
+| EvalMaxRes 辅助程序 | `$NLIP_SOFTWARE/bin/nuwls` |
+| `CADICAL` | `$NLIP_SOFTWARE/bin/cadical` |
+| SCIP 共享库 | `$SCIP_LIBRARY_DIR/libscip.so` |
+| Python 解释器 | `$NLIP_PROJECT/.venv-solvers/bin/python` |
 
-新版 MaxHS 直接调用二进制，不再通过原来隐含 SCIP 参数的包装脚本。运行模式参数统一显式保存在 `external_solver_args`。
-
-主批使用 Python API 的基线不另外启动 `z3`、`gurobi_cl`、`scip` 或 `cvc5` 命令行程序。统一由 `PYTHON` 启动 worker，再导入对应模块。模块实际位置为 `ROOT/.venv-solvers/lib/python3.12/site-packages/` 下的 `z3/`、`ortools/`、`gurobipy/`、`pyscipopt/` 和 `cvc5/`。这也是为什么仅查看系统 PATH 中的求解器版本不足以确认本实验实际使用的版本。
+程序路径写入 `jobs/config.cluster.json` 的 `solver_paths`，启动参数写入 `external_solver_args`。Python 基线由上述解释器导入对应模块运行。
 
 ### 2.3 外部程序的完整启动参数
 
@@ -136,9 +118,9 @@ uwrmaxsat -no-bin -no-sat -no-par -maxpre-time=60 -scip-cpu=900 -scip-cpu-add=40
 
 采用 2.0.6 正式版，MaxPre 已编入，SCIP 已连接到 10.1.0。`-no-par` 禁止 SCIP 与主算法并行求解，保留顺序 SCIP 阶段。900 和 400 是该阶段的内部时间设置，MaxPre 内部预算为 60 秒；这些阶段全部包含在实例统一的 3600 秒墙钟预算内，不另加实验时间。`-m -bm` 请求供适配器读取的模型输出。
 
-本机 `UWRFLAGS` 环境变量未设置。正式交接也保持未设置，避免用隐含环境选项覆盖记录的启动参数。
+保持 `UWRFLAGS` 未设置，避免覆盖命令行参数。
 
-UWrMaxSAT 2.0.6 内部使用按其构建接口编入的 CaDiCaL 3.0.0，并应用上游 UWr 提供的 conflicts 接口补丁。这是 UWr 的内部依赖；正式 SMT 主实验独立调用的是 CaDiCaL 3.1.0。MaxHS 源码同样自带其固定的 CaDiCaL 3.0.0。更新顶层求解器时保留其内部依赖接口，不把每个嵌入式组件替换成另一套实现。
+UWrMaxSAT 和 MaxHS 的内部 CaDiCaL 使用各自固定依赖。正式 SMT 单独调用 CaDiCaL 3.1.0，两者分开安装。
 
 #### EvalMaxRes
 
@@ -156,8 +138,6 @@ cadical <formula.cnf>
 
 使用独立 3.1.0 的默认顺序 SAT 模式。适配器要求 SAT/UNSAT 状态与 10/20 退出码一致，对 SAT 模型先检查 CNF，再做 NLIP 原问题验解。公式写出、进程启动和结果读取均计入统一时间。
 
-旧的独立开发 CLI 在未指定 `--sat-path` 或 `NLIP_CADICAL` 时，仍支持 PySAT 内置的 `cadical300`。正式主批会检查配置中的 `CADICAL` 可执行文件，因此不会静默回退到 3.0。
-
 ### 2.4 Python 基线和资源设置
 
 | 基线 | 模式及主要参数 |
@@ -170,31 +150,27 @@ cadical <formula.cnf>
 
 所有 worker 绑定一个物理核。可行解回到原问题验解，并重新计算原始目标。UNSAT 记录后端终态，没有为每个实例增加独立 UNSAT 证明检查。
 
-RC2、GLUCOSE 以及代码中保留的其他历史基线不属于此次正式主批。RC2 的开发接口来自当前 PySAT；本轮没有将它们重新加入正式配置。
-
 Python 主环境为 3.12。固定依赖为 `python-sat[pb]==1.9.dev24`、`pindakaas==0.6.1`、`z3-solver==5.4.1.0`、`psutil==7.2.2`、`pyscipopt==6.3.0`、`numpy==2.5.4`、`cvc5==1.4.2`、`ortools==9.15.6755`、`gurobipy==14.0.0`，绘图使用 `matplotlib==3.9.4`。
 
 Python 基线通过 `jobs/config.cluster.json` 的 `python` 启动，每个实例的入口为 `jobs/internal/worker.py <job.json>`。它导入对应 Python 接口，不另行调用 `z3`、`gurobi_cl` 或 `scip` 命令行程序。实际解释器和外部命令分别记录在 `result.json` 的 `command` 和 `external_command` 中。环境与版本记录在各配置的 `run.json` 中。
 
 ## 3. 代码位置、文件结构与职责
 
-### 3.1 开发到运行的路径
+### 3.1 项目位置与入口
 
-| 位置 | 职责 |
-| --- | --- |
-| 广州 `/home/ubuntu/#科研项目/MIS/3-NLIP_AIJ` | 实际开发、修复和 Ubuntu 测试 |
-| 广州 `/home/ubuntu/NLIP-Journal-Artifact-publish` | 从活动目录选取正式源码，准备 GitHub 提交 |
-| GitHub `ZhenglingYangli/NLIP-Journal-Artifact-` | 向合作者交付代码 |
-| MatriCS `/scratch/scherif/NLIP/AIJ/NLIP-Journal-Artifact-` | 合作者拉取代码后生成本站计划并运行 |
-| Windows `D:/Users/yang/Documents/ChatGPT/NLIP-AIJ/AIJ写作/04-AIJ实验运行` | 当前源码和说明的本地查阅镜像 |
+源码仓库为 [NLIP-Journal-Artifact-](https://github.com/ZhenglingYangli/NLIP-Journal-Artifact-)。项目目录由 `NLIP_PROJECT` 指定，代码、配置、数据和程序必须能被计算节点访问。
 
-Ubuntu 开发、GitHub 同步、MatriCS 拉取一直是同一条链。单独的 publish 目录只用于整理提交内容。它不会自动推送，也不是另一套正式实验。
+- `jobs/generate_scripts.py` 生成作业。
+- `jobs/goSolver.py` 运行实例。
+- `jobs/internal/experiment.py` 定义实验组合。
 
 ### 3.2 文件结构
 
 ```text
 项目根目录/
-├── README.md
+├── README.md                    项目入口
+├── MATRICS_GUIDE.md             完整安装与实验手册
+├── matrics.env.example          本站环境配置模板
 ├── jobs/
 │   ├── generate_scripts.py       生成器
 │   ├── goSolver.py               运行器入口
@@ -221,11 +197,10 @@ Ubuntu 开发、GitHub 同步、MatriCS 拉取一直是同一条链。单独的 
 ├── benchmarks/manifests/        正式实例清单
 ├── analysis/                    汇总、统计表、图和结果导出
 ├── tests/                       实验运行、资源限制和统计测试
-├── docs/                        本说明和 MatriCS 手册
 └── results/                     本机产生的日志和结果，不进源码提交
 ```
 
-Python 环境、外部求解器二进制、许可证和原始数据留在各自机器上。以上目录结构不会要求操作者逐个执行内部脚本。
+Python 环境、外部求解器二进制、许可证和原始数据留在各自机器上。日常操作只使用两个实验入口。`codes/` 是可安装的 NLIPSat 包，其内部 `codes/` 是 Python 模块目录，源码只保存一份。
 
 ### 3.3 主要文件功能
 
@@ -241,7 +216,7 @@ Python 环境、外部求解器二进制、许可证和原始数据留在各自�
 | `jobs/internal/run_slurm.sh` | 计算节点执行模板，由生成的提交脚本调用 |
 | `jobs/config.json` | 新机器的配置起点，随 GitHub 交付 |
 | `jobs/config.cluster.json` | 本站路径、程序、参数、预算及版本，不提交 GitHub |
-| `jobs/requirements*.txt` | 主环境固定依赖；`jobs/environment/` 记录旧环境，仅作历史参考 |
+| `jobs/requirements*.txt` | 正式实验的固定 Python 依赖 |
 | `jobs/tools/configure_cluster.py` | 将环境变量和已有路径写入本站配置，检查正式输入是否齐全 |
 | `jobs/tools/check_environment.py` | 检查 Python 包版本、可导入性及 SCIP 本体版本 |
 | `jobs/tools/check_final_inputs.py` | 检查输入清单，解析多项式数据；不运行正式性能实验 |
@@ -262,11 +237,9 @@ Python 环境、外部求解器二进制、许可证和原始数据留在各自�
 | `tests/test_*.py`、`codes/tests/` | 可复用回归测试，验证接口、语义、资源控制和统计；不是正式性能输入 |
 | `jobs/smoke/` | 四个已知答案的小模型，组合成 58 配置小测 |
 
-DiverseSAT 也使用 `jobs/generate_scripts.py`、`jobs/goSolver.py`、`jobs/internal/experiment.py`。DiverseSAT 保留独立编码作业及分阶段提交，NLIP 在一次受限运行内计时。这一区别来自两套实验的计时口径。
+### 3.4 本机文件
 
-### 3.4 GitHub 提交范围
-
-提交源码、配置模板、固定依赖、实例清单、四个小测输入、可复用回归测试和操作文档。Python 缓存、虚拟环境、构建产物、求解器二进制、许可证、本站配置、原始数据、日志和测试结果保留在本机。历史一次性诊断 `tests/check_*.py` 不作为本次交付入口。
+GitHub 提供源码、配置模板、依赖文件、实例清单和小测输入。`matrics.env`、`jobs/config.cluster.json`、求解器、虚拟环境、许可证、完整数据和运行结果保存在本机。
 
 ## 4. 合作者从零开始在 MatriCS 运行
 
@@ -300,7 +273,7 @@ ls jobs/generate_scripts.py jobs/goSolver.py jobs/internal/experiment.py
 
 ### 4.2 一次填写路径和模块，后续登录直接恢复
 
-先查看本站模块。模块名字以实际输出为准，不把广州的软件路径复制过来。
+先查看本站可用模块，按实际名称填写。
 
 ```bash
 module avail python
@@ -326,49 +299,13 @@ module avail scip
 | `SCIP_ROOT` | SCIP 10.1.0 根目录 | 复用已有安装时修改，按本文安装则保留默认 |
 | 五个 `NLIP_求解器` 和辅助程序路径 | 实际可执行文件绝对路径 | 复用已有程序时修改，按本文安装则保留默认 |
 
-**【直接运行，仅首次创建】** 创建本机环境文件。已有 `matrics.env` 时跳过 `cat` 代码块，直接 `nano matrics.env` 修改，避免覆盖本站设置。它不提交 GitHub，不是新的实验入口。
+**【直接运行，仅首次创建】** 创建本机环境文件。下面的命令仅在文件不存在时复制模板，保留已有设置。它不提交 GitHub，不是新的实验入口。
 
 ```bash
 cd "$NLIP_PROJECT"
-cat > matrics.env <<'ENV'
-# 【必改】填写本站实际模块命令；若系统已经提供所需软件，可以保留注释。
-# module load CHANGE_ME_PYTHON_MODULE
-# module load CHANGE_ME_GCC_MODULE
-# module load CHANGE_ME_MATH_DEVELOPMENT_MODULE
-
-# 【必改】与 4.1 的项目目录保持一致。
-export NLIP_PROJECT='/scratch/scherif/NLIP/AIJ/NLIP-Journal-Artifact-'
-# 【必改】加载模块后 Python 3.12 的实际命令或绝对路径。
-export NLIP_BOOTSTRAP_PYTHON='python3.12'
-
-# 【必改】下面三个数据目录必须已存在，文件名与清单一致。
-export NLIP_BENCHMARK_ROOT='/CHANGE_ME/benchmarks'
-export NLIP_DIVERSE_ROOT='/CHANGE_ME/diverse_sat'
-export NLIP_MIPO_ROOT='/CHANGE_ME/mipo-json'
-
-# 以下使用统一安装位置，通常不需要修改。
-export NLIP_SOFTWARE="$NLIP_PROJECT/solvers/matrics-20261124"
-# 【条件修改】复用本站 SCIP 10.1.0 时，只把这里改成其实际根目录。
-export SCIP_ROOT="$NLIP_SOFTWARE/scip"
-if [[ -f "$SCIP_ROOT/lib/libscip.so" ]]; then
-  export SCIP_LIBRARY_DIR="$SCIP_ROOT/lib"
-else
-  export SCIP_LIBRARY_DIR="$SCIP_ROOT/lib64"
+if [[ ! -e matrics.env ]]; then
+  cp matrics.env.example matrics.env
 fi
-export AIJ_PYTHON="$NLIP_PROJECT/.venv-solvers/bin/python"
-export PATH="$NLIP_PROJECT/.venv-solvers/bin:$PATH"
-export NLIP_MAXHS="$NLIP_SOFTWARE/bin/maxhs"
-export NLIP_WMAXCDCL="$NLIP_SOFTWARE/bin/wmaxcdcl_static"
-export NLIP_UWRMAXSAT="$NLIP_SOFTWARE/bin/uwrmaxsat"
-export NLIP_EVALMAXRES="$NLIP_SOFTWARE/bin/EvalMaxSAT"
-export NLIP_EVALMAXRES_HELPER="$NLIP_SOFTWARE/bin/nuwls"
-export NLIP_CADICAL="$NLIP_SOFTWARE/bin/cadical"
-
-# 【条件修改】管理员提供许可证文件时，取消注释并填写实际路径。
-# 已由站点模块或其他授权方式配置的账户，沿用原有设置。
-# export GRB_LICENSE_FILE='/CHANGE_ME/gurobi.lic'
-unset UWRFLAGS
-ENV
 nano matrics.env
 ```
 
@@ -434,7 +371,7 @@ ldd "$SCIP_LIBRARY_DIR/libscip.so"
 
 如果前两条 `test` 失败，检查解压目录或安装路径。`ldd` 若有 `not found`，先解决依赖。不要把整个第三方 `lib64` 盲目加入全局 `LD_LIBRARY_PATH`，以免覆盖 Python 使用的 C/C++ 运行库。下文把所需搜索路径写进新编译程序。
 
-**【直接运行，下载固定源码】** 下面六个链接固定到本次实际构建所用的 tag 或提交。MaxPre 和 COMiniSatPS 的下载内容已与广州归档逐文件核对一致。
+**【直接运行，下载固定源码】** 下面六个链接固定到实验要求的版本或提交。
 
 ```bash
 (
@@ -453,21 +390,7 @@ SOURCES
 )
 ```
 
-**【条件执行，在线下载失败时】** 本轮另备约 3.6 MB 的 `nlip-solver-sources-20261124.tar.gz`，包含上述六个源码压缩包，不含二进制或许可证。该备用附件不在 GitHub 仓库中，由交付者提供。已经完成上述在线下载时跳过本段。
-
-在自己的电脑上进入附件所在目录，替换 `USER@HOST` 后上传。
-
-```bash
-scp ./nlip-solver-sources-20261124.tar.gz USER@HOST:~/
-```
-
-回到 MatriCS 解包。
-
-```bash
-tar -xzf "$HOME/nlip-solver-sources-20261124.tar.gz" -C "$NLIP_SOFTWARE/downloads"
-```
-
-**【直接运行，回到 MatriCS】**
+**【直接运行，解包源码】**
 
 ```bash
 (
@@ -569,7 +492,6 @@ cd "$NLIP_PROJECT"
 **【直接运行，独立 CaDiCaL 3.1.0】**
 
 ```bash
-# BUILD_CADICAL
 (
 set -e
 cd "$NLIP_SOFTWARE/src/cadical-3.1.0"
@@ -580,10 +502,9 @@ cp build/cadical "$NLIP_SOFTWARE/bin/cadical"
 )
 ```
 
-**【直接运行，解析 SCIP 配套库】** 本段读取实际安装使用的 MPFR/GMP 库，避免把广州的 `libmpfr.so.4` 写死在 MatriCS 上。
+**【直接运行，解析 SCIP 配套库】** 本段读取 SCIP 实际使用的 MPFR/GMP 库。
 
 ```bash
-# BUILD_LIBRARIES
 export MPFR_LIBRARY_FILE="$(ldd "$SCIP_LIBRARY_DIR/libscip.so" | awk '$1 ~ /^libmpfr\.so/ {print $3; exit}')"
 export GMP_LIBRARY_FILE="$(ldd "$SCIP_LIBRARY_DIR/libscip.so" | awk '$1 ~ /^libgmp\.so/ {print $3; exit}')"
 export CXX_RUNTIME_DIR="$(dirname "$(readlink -f "$(g++ -print-file-name=libstdc++.so.6)")")"
@@ -600,7 +521,6 @@ printf 'SCIP 库目录 %s\nMPFR %s\nGMP %s\n' "$SCIP_LIBRARY_DIR" "$MPFR_LIBRARY
 **【直接运行，UWrMaxSAT 内部依赖与程序】** 此内部 CaDiCaL 固定为 3.0.0，与刚才独立安装的 3.1.0 分开。
 
 ```bash
-# BUILD_UWR
 (
 set -e
 cd "$NLIP_SOFTWARE/src/cominisatps"
@@ -637,10 +557,9 @@ cp build/release/bin/uwrmaxsat "$NLIP_SOFTWARE/bin/uwrmaxsat"
 
 如果从失败处重新编译，已经成功应用的 `patch` 不重复运行。修改源码或补丁状态不清楚时，重新解压该源码到空的新临时编译目录再做，不删正式结果。
 
-**【直接运行，MaxHS】** 启用 SCIP，保留本次选定源码和内部依赖。
+**【直接运行，MaxHS】** 启用 SCIP 后端。
 
 ```bash
-# BUILD_MAXHS
 (
 set -e
 cd "$NLIP_SOFTWARE/src/maxhs"
@@ -926,32 +845,4 @@ scontrol requeue 数组编号_元素编号
 bash analysis/push_results.sh export main-new-solvers
 ```
 
-输出位于 `deliveries/main-new-solvers/`，验解记录包留在原批次目录。负责人审核结果后再决定是否运行该工具的 `push` 操作。这里的结果交付与当前源码同步分开。
-
-## 6. 交付验证与当前限制
-
-本次检查覆盖编码与预处理改动、正式方法矩阵、外部状态和模型读取、Python 基线、预算与进程树清理、Slurm 调用、续跑和结果统计。最终验证在广州准备发布的源码副本上执行。
-
-本次最终交付副本验证结果如下。
-
-| 验证内容 | 结果 |
-| --- | --- |
-| 实验运行、后端、配置与分析回归 | 43 项通过 |
-| 核心编码、预处理与接口回归 | 50 项通过 |
-| 公共 API 脚本 | 56/56 通过 |
-| 58 配置经实际 Slurm 执行模板运行 | 52 OPTIMAL、6 SAT，全部已知答案与原问题验解通过 |
-| 汇总与绘图 | 完成，58 条结果与计划一致 |
-| 生成的提交脚本 | 本地模拟验证数组参数、分析依赖、编号保存和重复提交拒绝 |
-| 正式与消融计划 | 主批 58 / 22,220；消融 2 / 1,020；bigmem 备选为 28 worker / 450 GiB |
-| DiverseSAT 配置位置统一 | 170 个实验作业及 13 个辅助提交脚本与调整前内容一致，实际消费者加载通过 |
-
-广州记录位于 `ROOT/results/github-delivery-20261124/`。这些日志留在本机，测试源代码随仓库交付。58 配置使用四个已知答案的小模型，覆盖全部正式方法组合。MatriCS 正式性能作业尚未提交。广州 Gurobi 当前许可证规模受限，MatriCS 正式运行前必须通过完整规模许可证探针和 58 配置计算节点小测。UNSAT 目前记录后端终态，未对每个实例增加独立不可满足证明检查。正式论文结论还需对最终运行结果完成原问题验解与可用公开参考值核对。
-
-
-### 本次安装说明的实际核验
-
-2026-11-24 从手册提取命令，在广州独立临时目录重新解压源码并编译独立 CaDiCaL 3.1.0、UWrMaxSAT 2.0.6 和 MaxHS。三个程序均构建成功，并通过 6 个有已知答案的最优、SAT 或 UNSAT 功能检查。MaxPre 使用与原构建相同的 Release 设置。生产使用的求解器没有被覆盖。
-
-固定源码下载的关键内部依赖与原归档逐文件一致。SCIP 官方下载地址及归档顶层目录、MSE 发行包内三个目标程序的位置已核对。本站配置与版本写入命令在独立目录试跑，展开为 22,220 次调用；全文 Shell 和嵌入 Python 命令通过语法检查。
-
-这次重编译复用了广州已有的 SCIP 10.1.0、编译器和 Python 环境，没有把广州验证称为 MatriCS 验证。MatriCS 的模块、系统兼容性、网络、完整许可证和计算节点小测，按第 4 部分在本站确认。
+输出位于 `deliveries/main-new-solvers/`，验解记录包留在原批次目录。负责人审核结果后再决定是否运行该工具的 `push` 操作。
