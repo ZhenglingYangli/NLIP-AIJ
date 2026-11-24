@@ -13,3 +13,4 @@ jobs/config.ubuntu.json
 
 # One-off development diagnostics stay on the development machine.
 /tests/check_*.py
+/matrics.env
