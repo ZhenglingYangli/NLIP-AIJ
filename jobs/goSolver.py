@@ -46,6 +46,9 @@ def run_campaign():
 
 
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == 'pilot':
+        from internal.testing import pilot
+        raise SystemExit(pilot(sys.argv[2:]))
     if '--campaign' in sys.argv[1:]:
         return run_campaign()
     ap = argparse.ArgumentParser(description=__doc__)
@@ -108,4 +111,10 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except Exception as exc:
+        if len(sys.argv) > 1 and sys.argv[1] in ('test', 'pilot'):
+            print('TEST FAILED\n' + str(exc), flush=True)
+            raise SystemExit(1)
+        raise

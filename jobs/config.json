@@ -73,6 +73,27 @@
       "input_root": "../benchmarks/mipo"
     }
   },
-  "solver_metadata": {},
+  "solver_metadata": {
+    "MAXHS": {
+      "release": "ASchidler/MaxHS b1e21b67cfe8ac2fd6b2dfb4b2b6b74eb3585740",
+      "mode": "SCIP 10.1.0; optimizer-threads=1; no-lp-harden-reduced"
+    },
+    "WMAXCDCL": {
+      "release": "MSE2026 WMaxCDCL2026",
+      "mode": "standalone wmaxcdcl_static"
+    },
+    "UWRMAXSAT": {
+      "release": "UWrMaxSat v2.0.6",
+      "mode": "MaxPre; SCIP 10.1.0 sequential; no-par"
+    },
+    "EVALMAXRES": {
+      "release": "MSE2026 EvalMaxRes",
+      "mode": "exact; nuwls helper"
+    },
+    "CADICAL": {
+      "release": "CaDiCaL 3.1.0",
+      "mode": "standalone sequential SAT"
+    }
+  },
   "external_solver_args": {}
 }

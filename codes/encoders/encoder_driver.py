@@ -3,8 +3,6 @@
 from pysat.formula import WCNF, IDPool
 from pysat.card import CardEnc
 from .onehot import _check_deadline
-from tools.arithmetic import bound_clauses
-import math
 
 
 class EncodingDriverError(Exception):
@@ -235,6 +233,8 @@ def _ensure_una_structure(w, x_fn, q, ub, deadline=0):
 def _ensure_bin_structure(w, x_fn, q, ub, deadline=0):
     num_bits = max(1, ub.bit_length())
     bits = [x_fn(q, r) for r in range(num_bits)]
-    for clause in bound_clauses(bits, ub):
+    # A zero in ub forbids a larger bit when all higher one-bits match ub.
+    for r in range(num_bits):
         _check_deadline(deadline)
-        w.append(clause)
+        if not ((ub >> r) & 1):
+            w.append([-bits[r]] + [-bits[k] for k in range(r + 1, num_bits) if (ub >> k) & 1])

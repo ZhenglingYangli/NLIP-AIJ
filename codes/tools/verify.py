@@ -103,10 +103,6 @@ def verify_values(problem, values):
             raise ValueError(f'constraint {index} violated: {desc}')
     source_valid = check_original_smt(problem, values)
     objective = evaluate_polynomial(problem.get('objective', {}).get('terms', []), values)
-    for block in problem.get('objective', {}).get('factor_blocks', []) or []:
-        for r in block['residuals']:
-            residual = number(r.get('constant', 0)) + sum(number(c)*values[n] for n,c in r['coefficients'].items())
-            objective += number(r.get('weight', 1))*residual**2
     return objective, checks, source_valid
 
 
@@ -123,8 +119,6 @@ def verify_solution(problem, result, encoding, vpool=None):
         values.update(meta.get('objective', {}).get('probed_variables', {}))
         for name, shift in meta.get('variable_shifts', {}).items():
             values[name] += shift
-        for name in meta.get('lrn_auxiliaries', []):
-            values.pop(name, None)
         report['var_values'] = values
         computed, checks, source_valid = verify_values(problem, values)
         report['constraint_checks'] = checks

@@ -10,7 +10,7 @@ FIELDS = ['job_id', 'family', 'task', 'method', 'encoding', 'solver', 'status', 
           'objective_exact', 'solve_wall_seconds', 'verify_wall_seconds', 'wall_seconds',
           'solve_budget_seconds', 'peak_tree_rss_bytes', 'termination', 'host', 'cpu', 'input',
           'num_variables', 'num_hard_clauses', 'num_soft_clauses', 'encode_seconds', 'backend_seconds',
-          'decomposition_requested', 'decomposition_effective', 'lrn_requested']
+          'decomposition_requested', 'decomposition_effective']
 FEATURES = ['representation','variables','boolean_variables','boolean_fraction','domain_size_min','domain_size_max',
             'domain_size_mean','objective_terms','objective_degree','constraints','constraint_atoms',
             'nonlinear_constraint_atoms','constraint_degree','objective_sense','ast_nodes']
@@ -42,7 +42,6 @@ def row_for(job, result):
     stats = result.get('encoding_stats', {})
     row['decomposition_requested'] = stats.get('decomposition_requested', '')
     row['decomposition_effective'] = stats.get('decomposition_effective', '')
-    row['lrn_requested'] = stats.get('lrn', {}).get('requested', '')
     row['model_route'] = formula.get('route','sat-maxsat' if formula.get('hard') is not None or formula.get('num_hard_clauses') is not None else '')
     for key,source in [('model_variables','variables'),('model_constraints','constraints'),('domain_bits','domain_bits'),
                        ('product_variables','product_variables'),('objective_scale','objective_scale'),

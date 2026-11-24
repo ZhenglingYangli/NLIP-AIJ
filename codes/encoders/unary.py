@@ -19,32 +19,13 @@ def _compute_difference_def8(
     if any(r == 0 for r in r_tuple):
         return 0
 
-    diff = 0
-    for mask in range(1 << m):
-        r_prime = list(r_tuple)
-        popcnt = 0
-        for j in range(m):
-            if (mask >> j) & 1:
-                r_prime[j] -= 1
-                popcnt += 1
-
-        # Evaluate term at r_prime assignment
-        c = int(term.get('c', 1))
-        term_vars = term.get('vars', {}) or {}
-        t_val = c
-        for vi, vn in enumerate(sorted_var_names):
-            k_q = int(term_vars.get(vn, 0))
-            if k_q == 0:
-                continue
-            lb = int(lb_map.get(vn, 0)) if lb_map else 0
-            t_val *= ((r_prime[vi] + lb) ** k_q)
-
-        if popcnt % 2 == 1:
-            diff -= t_val
-        else:
-            diff += t_val
-
-    return diff
+    # A monomial is separable: mixed finite differences factor by variable.
+    difference = int(term.get('c', 1))
+    for name, r in zip(sorted_var_names, r_tuple):
+        power = int(term.get('vars', {}).get(name, 0))
+        shift = int(lb_map.get(name, 0)) if lb_map else 0
+        difference *= (r + shift)**power - (r - 1 + shift)**power
+    return difference
 
 
 def encode_term_una(
@@ -120,6 +101,13 @@ def encode_term_una(
             for i, q in enumerate(sorted_var_indices):
                 r_q = r_tuple[i]
                 hard_clauses.append([-z_var, x_fn(q, r_q)])
+        elif for_objective and diff_value < 0:
+            # Objective only: UNA-H2 suffices (UNA-H1 redundant for negative weight)
+            clause = [z_var]
+            for i, q in enumerate(sorted_var_indices):
+                r_q = r_tuple[i]
+                clause.append(-x_fn(q, r_q))
+            hard_clauses.append(clause)
         else:
             # Constraints: need full biconditional (UNA-H1 + UNA-H2)
             for i, q in enumerate(sorted_var_indices):

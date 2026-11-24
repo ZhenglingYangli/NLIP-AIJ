@@ -35,7 +35,9 @@ def main():
             ROOT / config['solver_paths'][key] if config['solver_paths'].get(key) else None,
             software / 'bin' / name], True)
     arguments = config.setdefault('external_solver_args', {})
-    arguments.setdefault('MAXHS', ['-optimizer=scip', '-no-lp-harden-reduced'])
+    arguments.setdefault('MAXHS', ['-optimizer=scip', '-optimizer-threads=1', '-no-lp-harden-reduced'])
+    if not any(option.startswith('-optimizer-threads=') for option in arguments['MAXHS']):
+        arguments['MAXHS'].append('-optimizer-threads=1')
     arguments.setdefault('UWRMAXSAT', ['-no-bin', '-no-sat', '-no-par', '-maxpre-time=60',
                                     '-scip-cpu=900', '-scip-cpu-add=400', '-m', '-bm'])
     if 'EVALMAXRES' not in arguments:
@@ -53,7 +55,10 @@ def main():
             options[index:index + 2] = [flag, helper]
         else:
             options.extend([flag, helper])
-    config.setdefault('solver_metadata', {})
+    defaults = json.loads((ROOT / 'config.json').read_text())['solver_metadata']
+    metadata = config.setdefault('solver_metadata', {})
+    for backend, info in defaults.items():
+        metadata.setdefault(backend, info)
     if os.environ.get('NLIP_DIVERSE_ROOT'):
         config['families']['diverse']['input_root'] = os.environ['NLIP_DIVERSE_ROOT']
     if os.environ.get('NLIP_MIPO_ROOT'):

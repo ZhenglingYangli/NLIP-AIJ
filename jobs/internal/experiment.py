@@ -5,6 +5,13 @@ from pathlib import Path
 import shutil
 import sys
 
+PILOT_INPUTS = {
+    'qplib': 'QPLIB_3562.qplib',
+    'diverse': 'flat30-1.cnf',
+    'mipo': 'instance_10_10_-10_10_100_5.json',
+    'smt': 'problem-005612.cvc.1.smt2',
+}
+
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT.parent / 'codes'))
 from solver.config import MAINLINE_OPTIONS
@@ -31,7 +38,7 @@ def methods(task, matrix, family=None):
         backend = 'CADICAL' if task == 'decision' else 'WMAXCDCL'
         return [{'id': 'bin-d-unshared-' + backend.lower(), 'encoding': 'BIN', 'solver': backend,
                  'options': dict(MAINLINE_OPTIONS, decomp_shared=False)}]
-    variants = [{'id': f'{enc.lower()}-{solver.lower()}', 'encoding': enc, 'solver': solver, 'options': {'use_lrn': False}}
+    variants = [{'id': f'{enc.lower()}-{solver.lower()}', 'encoding': enc, 'solver': solver, 'options': {}}
                 for enc in ['OH', 'UNA', 'BIN'] for solver in backends]
     if family in ('mipo', 'smt'):
         variants += [{'id': 'bin-d-' + s.lower(), 'encoding': 'BIN', 'solver': s,
@@ -77,6 +84,10 @@ def make_jobs(config, profile, matrix, families):
         else:
             directory = Path(desc['input_root']) if 'input_root' in desc else Path(config['benchmark_root']) / desc['directory']
             names = manifest_names(config, family)
+            if profile == 'pilot':
+                if PILOT_INPUTS[family] not in names:
+                    raise ValueError('pilot input is absent from frozen manifest: ' + PILOT_INPUTS[family])
+                names = [PILOT_INPUTS[family]]
             index = {}
             for path in directory.rglob('*' + desc['extension']):
                 index.setdefault(path.name, []).append(path)

@@ -10,6 +10,6 @@ set -euo pipefail
 export AIJ_RUNNER_DIR="${AIJ_RUNNER_DIR:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../jobs" && pwd)}"
 export AIJ_PYTHON="${AIJ_PYTHON:-$(command -v python3)}"
 : "${AIJ_CAMPAIGN:?Set AIJ_CAMPAIGN}"
-cd "$AIJ_RUNNER_DIR/../analysis"
+cd "$AIJ_RUNNER_DIR/../sumup"
 export MPLBACKEND=Agg
 "$AIJ_PYTHON" analyze_campaign.py "$AIJ_CAMPAIGN"

@@ -7,7 +7,7 @@ MaxSAT engines.  The package exposes these public entry points:
 
 * :func:`load_problem` – read an instance from a supported file format.
 * :class:`EncodingConfig` – configure encoding options (decomposition, etc.).
-* :func:`mainline_config` – the adopted complete BIN+D configuration (LRN off).
+* :func:`mainline_config` – the adopted complete BIN+D configuration.
 * :data:`MAINLINE_SOLVER` – the adopted RC2 backend.
 * :func:`build_wcnf` – build a PySAT WCNF formula from a problem dictionary.
 * :func:`solve` – encode *and* solve in one call.

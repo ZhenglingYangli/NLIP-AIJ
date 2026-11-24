@@ -1,9 +1,7 @@
 #!/usr/bin/env python3
 
-import math
 from typing import Dict, Any, List, Tuple, Optional
 from pysat.formula import IDPool
-from pysat.pb import PBEnc
 from .onehot import _check_deadline
 
 
@@ -20,7 +18,6 @@ def _fa_clauses(a: int, b: int, cin: int, vpool: IDPool, prefix: str
     ]
     return s, c, cls
 
-
 def _ha_clauses(a: int, b: int, vpool: IDPool, prefix: str
                 ) -> Tuple[int, int, List[List[int]]]:
     """Half adder: (sum, carry, clauses).  sum = a XOR b, carry = a AND b."""
@@ -31,7 +28,6 @@ def _ha_clauses(a: int, b: int, vpool: IDPool, prefix: str
         [-c, a], [-c, b], [c, -a, -b],
     ]
     return s, c, cls
-
 
 def mul(
     a_bits: List[int],
@@ -44,6 +40,9 @@ def mul(
     deadline: float = 0.0
 ) -> Tuple[List[int], List[List[int]]]:
     _check_deadline(deadline)
+    if sense not in (-1, 0, 1):
+        raise ValueError(f'unsupported multiplication sense: {sense}')
+    vpool._multiplication_count = getattr(vpool, '_multiplication_count', 0) + 1
     num_bits_a = len(a_bits)
     num_bits_b = len(b_bits)
 
@@ -69,8 +68,7 @@ def mul(
                 hard_clauses.append([z, -a_bits[r_a], -b_bits[r_b]])
             columns[r_a + r_b].append(z)
 
-    # Mul-2: Wallace-tree reduction of partial-product columns into result bits.
-    # Much cheaper than PBEnc.equals (BDD), producing O(n_a * n_b) adder clauses.
+    # Compress partial-product columns with full and half adders.
     ub_product = ub_a * ub_b
     num_bits_y = max(1, ub_product.bit_length())
 
@@ -166,11 +164,11 @@ def mul_cached(
     cache: Optional[MulCache] = None,
     deadline: float = 0.0
 ) -> Tuple[List[int], List[List[int]], int]:
-    _check_deadline(deadline)
     if cache is not None:
         key = MulCache.make_key(a_bits, b_bits, sense)
         cached = cache.get(key)
         if cached is not None:
+            vpool._multiplication_cache_hits = getattr(vpool, '_multiplication_cache_hits', 0) + 1
             return cached[0], [], cached[1]  # Reuse bits, no new clauses
 
     y_bits, hard_clauses = mul(a_bits, b_bits, vpool, prefix, ub_a, ub_b, sense, deadline=deadline)
@@ -190,7 +188,6 @@ def decompose_sequential(
     cache: Optional[MulCache] = None,
     deadline: float = 0.0
 ) -> Tuple[List[int], List[List[int]], int]:
-    _check_deadline(deadline)
     if len(omega) == 0:
         return [], [], 1
 
@@ -209,7 +206,6 @@ def decompose_sequential(
     hard_clauses.extend(clauses)
 
     for k in range(2, len(omega)):
-        _check_deadline(deadline)
         _, _, ub_k, bits_k = omega[k]
         acc_bits, clauses, acc_ub = mul_cached(
             acc_bits, bits_k, vpool,
@@ -228,7 +224,6 @@ def decompose_binary_tree(
     cache: Optional[MulCache] = None,
     deadline: float = 0.0
 ) -> Tuple[List[int], List[List[int]], int]:
-    _check_deadline(deadline)
     if len(omega) == 0:
         return [], [], 1
 
@@ -269,6 +264,8 @@ def encode_term_decomp(
 ) -> Tuple[Dict[int, Tuple[int, int]], List[List[int]]]:
 
     _check_deadline(deadline)
+    if strategy not in ('sequential', 'binary_tree'):
+        raise ValueError(f'unsupported decomposition strategy: {strategy}')
     term_vars = term.get('vars', {}) or {}
     c = int(term.get('c', 1))
 
@@ -277,14 +274,12 @@ def encode_term_decomp(
 
     omega = []
     for var_name, power in sorted(term_vars.items()):
-        _check_deadline(deadline)
         q = name2idx[var_name]
         ub = int(problem['variables'][var_name]['ub'])
         num_bits = max(1, ub.bit_length())
         bits = [vpool.id(f'x_{q}@{r}') for r in range(num_bits)]
 
         for _ in range(int(power)):
-            _check_deadline(deadline)
             omega.append((var_name, q, ub, bits))
 
     if len(omega) == 0:
@@ -304,7 +299,6 @@ def encode_term_decomp(
 
     z_mapping = {}
     for r, y_var in enumerate(result_bits):
-        _check_deadline(deadline)
         weight = c * (2 ** r)
         z_mapping[r] = (y_var, weight)
 

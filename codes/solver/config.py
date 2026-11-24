@@ -2,6 +2,11 @@ import os
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
+from pathlib import Path
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
+_SOLVER_DIR = str(_PROJECT_ROOT / "solvers" / "maxsat")
+
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _SOLVER_DIR = str(Path(os.environ.get("NLIP_SOFTWARE", _PROJECT_ROOT.parent / "solvers" / "matrics-20261124")) / "bin")
@@ -17,7 +22,7 @@ class EncodingConfig:
     Attributes
     ----------
     encoding : str
-        Default encoding name (``"OH"``, ``"UNA"``, ``"BIN"``).
+        Legacy metadata. Select the encoding with the API or CLI argument.
     use_decomposition : bool
         Enable order decomposition for high-degree terms in BIN encoding.
     decomp_threshold : int
@@ -31,7 +36,7 @@ class EncodingConfig:
     weight_gcd_normalize : bool
         Divide all soft weights by their GCD (improves core-guided solving).
     save_wcnf : bool
-        Whether to persist the generated WCNF file.
+        Legacy metadata. Export is controlled by the explicit output path.
     workdir : str
         Working directory for temporary files (default: system temp dir,
         override via ``NLIP_WORKDIR`` env var).
@@ -39,18 +44,19 @@ class EncodingConfig:
         Paths to external MaxSAT solver binaries (override via
         ``NLIP_MAXHS``, ``NLIP_WMAXCDCL``, ``NLIP_OPENWBO`` env vars).
     rc2_timeout : float
-        RC2 child-process time limit, including startup (0 = unlimited).
+        RC2 subprocess time limit in seconds, including startup (0 = unlimited).
     external_solver_timeout : float
         Timeout in seconds for external solvers (0 = no timeout).
     enable_preprocess : bool
-        Enable optional linear bound propagation and monotonic objective probing.
-        Variable shifting and exact normalization always preserve input semantics.
+        Enable optional bound propagation and monotone variable fixing.
+        Exact normalization and variable shifts always run.
     preprocess_integerize : bool
         Convert fractional coefficients to integers during preprocessing.
     preprocess_scale_limit : int
         Maximum scaling factor allowed during integerization.
     use_mapping_shift : bool
-        Use mapping *y = x − lb* during encoding (OH/UNA/BIN).
+        Mapping option for direct encoder calls. The solve pipeline always
+        normalizes variable lower bounds before encoding.
     encoding_deadline : float
         Absolute ``time.time()`` deadline for the encoding phase
         (0 = no deadline).
@@ -78,7 +84,6 @@ class EncodingConfig:
     external_solver_timeout: float = 0.0
     rc2_timeout: float = 0.0
 
-    use_lrn: bool = False
     enable_preprocess: bool = True
     preprocess_integerize: bool = True
     preprocess_scale_limit: int = 1000000
@@ -97,13 +102,12 @@ MAINLINE_OPTIONS = {
     "decomp_exact": True,
     "decomp_shared": True,
     "weight_gcd_normalize": True,
-    "use_lrn": False,
     "enable_preprocess": True,
 }
 
 
 def mainline_config():
-    """Return the adopted complete BIN+D configuration, with LRN disabled.
+    """Return the adopted complete BIN+D configuration, for the experiment matrix.
 
     A fresh object is returned so callers can set operational limits without
     changing the shared preset. Matrix experiments may select another solver

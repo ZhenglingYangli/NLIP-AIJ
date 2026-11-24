@@ -20,6 +20,7 @@ def main():
     job = json.loads(Path(args.job).read_text())
     import psutil
     psutil.Process().cpu_affinity([job['cpu']])
+    emit('CPU', psutil.Process().cpu_affinity())
     for name in ['OMP_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'MKL_NUM_THREADS', 'NUMEXPR_NUM_THREADS']:
         os.environ[name] = '1'
     root = Path(job['code_root'])
@@ -70,19 +71,15 @@ def main():
                 result = solve(problem, max(.001, job['solve_seconds'] - (time.monotonic()-started)), begin_verify)
         except Unsupported as exc:
             result = {'status': 'UNSUPPORTED', 'verified': False, 'error': str(exc)}
-    elif method['solver'] in ('SCIP-MILP', 'SCIP-NATIVE'):
+    elif method['solver'] == 'SCIP-NATIVE':
         if job['task'] == 'decision':
             problem = load_decision(job['input'])
         else:
             problem = load_problem(job['input'], k=job.get('k'))
         from baselines.scip_baseline import solve
         remaining = max(.001, job['solve_seconds'] - (time.monotonic() - started))
-        result = solve(problem, 'milp' if method['solver']=='SCIP-MILP' else 'native',
+        result = solve(problem, 'native',
                        remaining, job['task'], begin_verify)
-    elif method['solver'] in ('CPLEX-NATIVE', 'CPLEX-MILP', 'HIGHS-MILP'):
-        from baselines.optimization_baselines import solve
-        problem = load_problem(job['input'], k=job.get('k'))
-        result = solve(problem, method['solver'], max(.001, job['solve_seconds'] - (time.monotonic()-started)), begin_verify)
     elif method['solver'] in ('CP-SAT', 'GUROBI'):
         from baselines.integer_baselines import solve
         problem = load_problem(job['input'], k=job.get('k'))

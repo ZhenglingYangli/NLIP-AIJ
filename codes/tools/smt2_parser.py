@@ -44,6 +44,8 @@ class ParseStats:
 def parse_smt2_file(filepath: str, objective_mode: str = "sum",
                     verbose: bool = False, default_ub: int = 1000,
                     strict: bool = True) -> Dict[str, Any]:
+    if objective_mode not in ('sum', 'first', 'zero'):
+        raise ValueError(f'unsupported SMT objective mode: {objective_mode}')
     path = Path(filepath)
     stats = ParseStats()
 
@@ -83,6 +85,8 @@ def parse_smt2_file(filepath: str, objective_mode: str = "sum",
     except Exception as e:
         if strict:
             raise ValueError(f"Z3 could not parse {path.name}: {e}") from e
+        stats.skipped_constraints += 1
+        stats.skipped_reasons["SMT parse failure"] += 1
         if verbose:
             print(f"Warning: Z3 parse failed: {e}")
 
@@ -285,7 +289,7 @@ def _extract_all_constraints_z3(assertions, int_var_names: List[str], stats: Par
         if z3.is_or(expr):
             stats.or_constraints += 1
 
-        if z3.is_or(expr) or z3.is_not(expr) or z3.is_implies(expr) or z3.is_true(expr) or z3.is_false(expr):
+        if z3.is_bool(expr):
             dnf = _boolean_to_dnf(expr, int_var_names, stats)
             if dnf is None:
                 continue
@@ -361,6 +365,13 @@ def _boolean_to_dnf(expr, int_var_names: List[str], stats: ParseStats,
         return [] if negated else [[]]
     if z3.is_false(expr):
         return [[]] if negated else []
+    if z3.is_const(expr) and expr.decl().kind() == z3.Z3_OP_UNINTERPRETED and z3.is_bool(expr):
+        return [[{'terms': [{'c': 1, 'vars': {_get_var_name(expr): 1}}],
+                  'rel': '==', 'rhs': 0 if negated else 1}]]
+    if z3.is_eq(expr) and all(z3.is_bool(child) for child in expr.children()):
+        left, right = expr.children()
+        equivalent = z3.Or(z3.And(left, right), z3.And(z3.Not(left), z3.Not(right)))
+        return _boolean_to_dnf(equivalent, int_var_names, stats, negated)
     if z3.is_not(expr):
         return _boolean_to_dnf(expr.children()[0], int_var_names, stats, not negated)
 
@@ -418,6 +429,8 @@ def _boolean_to_dnf(expr, int_var_names: List[str], stats: ParseStats,
 
 def _parse_polynomial_constraint_general(expr, int_var_names: List[str], stats: ParseStats) -> Optional[Dict]:
     if not z3.is_app(expr):
+        stats.skipped_constraints += 1
+        stats.skipped_reasons["unsupported non-atomic assertion"] += 1
         return None
 
     kind = expr.decl().kind()
@@ -444,8 +457,9 @@ def _parse_polynomial_constraint_general(expr, int_var_names: List[str], stats: 
 
     lhs, rhs = expr.children()
 
-    lhs_terms = _parse_polynomial_expr(lhs, int_var_names)
-    rhs_terms = _parse_polynomial_expr(rhs, int_var_names)
+    polynomial_cache = {}
+    lhs_terms = _parse_polynomial_expr(lhs, int_var_names, polynomial_cache)
+    rhs_terms = _parse_polynomial_expr(rhs, int_var_names, polynomial_cache)
 
     if lhs_terms is None:
         stats.skipped_reasons["LHS parse failed"] += 1
@@ -457,30 +471,12 @@ def _parse_polynomial_constraint_general(expr, int_var_names: List[str], stats: 
         stats.skipped_constraints += 1
         return None
 
-    # Standard form: lhs - rhs rel 0 (move all terms to left, constants to right)
-    combined_terms = []
-    rhs_constant = 0
-
-    for term in lhs_terms:
-        if not term['vars']:
-            rhs_constant -= term['c']
-        else:
-            combined_terms.append(term.copy())
-
-    for term in rhs_terms:
-        if not term['vars']:
-            rhs_constant += term['c']
-        else:
-            found = False
-            for ct in combined_terms:
-                if ct['vars'] == term['vars']:
-                    ct['c'] -= term['c']
-                    found = True
-                    break
-            if not found:
-                combined_terms.append({'c': -term['c'], 'vars': term['vars'].copy()})
-
-    combined_terms = [t for t in combined_terms if t['c'] != 0]
+    # Merge lhs - rhs by monomial key. A linear search for every RHS term
+    # becomes quadratic on the bundled Calypto expanded polynomial.
+    combined = _merge_like_terms(lhs_terms + [
+        {'c': -term['c'], 'vars': term['vars']} for term in rhs_terms])
+    rhs_constant = -sum(term['c'] for term in combined if not term['vars'])
+    combined_terms = [term for term in combined if term['vars'] and term['c']]
 
     rel_map = {
         z3.Z3_OP_LE: '<=',
@@ -503,7 +499,21 @@ def _parse_polynomial_constraint_general(expr, int_var_names: List[str], stats: 
     }
 
 
-def _parse_polynomial_expr(expr, int_var_names: List[str]) -> Optional[List[Dict]]:
+def _parse_polynomial_expr(expr, int_var_names: List[str], cache=None) -> Optional[List[Dict]]:
+    # Z3 expressions are DAGs: SMT let bindings can reuse a subtree many times.
+    # Cache immutable polynomials per atom; callers receive fresh mutable terms.
+    if cache is None:
+        cache = {}
+    key = expr.get_id()
+    if key not in cache:
+        result = _parse_polynomial_expr_uncached(expr, int_var_names, cache)
+        cache[key] = None if result is None else tuple(
+            (term['c'], tuple(term['vars'].items())) for term in result)
+    stored = cache[key]
+    return None if stored is None else [{'c': c, 'vars': dict(powers)} for c, powers in stored]
+
+
+def _parse_polynomial_expr_uncached(expr, int_var_names: List[str], cache) -> Optional[List[Dict]]:
     # Integer constant
     if z3.is_int_value(expr):
         val = expr.as_long()
@@ -524,7 +534,7 @@ def _parse_polynomial_expr(expr, int_var_names: List[str]) -> Optional[List[Dict
     if kind == z3.Z3_OP_ADD:
         result = []
         for child in children:
-            child_terms = _parse_polynomial_expr(child, int_var_names)
+            child_terms = _parse_polynomial_expr(child, int_var_names, cache)
             if child_terms is None:
                 return None
             result.extend(child_terms)
@@ -533,15 +543,15 @@ def _parse_polynomial_expr(expr, int_var_names: List[str]) -> Optional[List[Dict
     # Subtraction
     if kind == z3.Z3_OP_SUB:
         if len(children) == 1:
-            terms = _parse_polynomial_expr(children[0], int_var_names)
+            terms = _parse_polynomial_expr(children[0], int_var_names, cache)
             if terms is None:
                 return None
             for t in terms:
                 t['c'] = -t['c']
             return terms
         elif len(children) == 2:
-            left_terms = _parse_polynomial_expr(children[0], int_var_names)
-            right_terms = _parse_polynomial_expr(children[1], int_var_names)
+            left_terms = _parse_polynomial_expr(children[0], int_var_names, cache)
+            right_terms = _parse_polynomial_expr(children[1], int_var_names, cache)
             if left_terms is None or right_terms is None:
                 return None
             for t in right_terms:
@@ -553,7 +563,7 @@ def _parse_polynomial_expr(expr, int_var_names: List[str]) -> Optional[List[Dict
     if kind == z3.Z3_OP_UMINUS:
         if len(children) != 1:
             return None
-        terms = _parse_polynomial_expr(children[0], int_var_names)
+        terms = _parse_polynomial_expr(children[0], int_var_names, cache)
         if terms is None:
             return None
         for t in terms:
@@ -562,7 +572,7 @@ def _parse_polynomial_expr(expr, int_var_names: List[str]) -> Optional[List[Dict
 
     # Multiplication
     if kind == z3.Z3_OP_MUL:
-        return _parse_multiplication(children, int_var_names)
+        return _parse_multiplication(children, int_var_names, cache)
 
     # ITE (if-then-else) - not supported
     if kind == z3.Z3_OP_ITE:
@@ -571,7 +581,7 @@ def _parse_polynomial_expr(expr, int_var_names: List[str]) -> Optional[List[Dict
     return None
 
 
-def _parse_multiplication(children, int_var_names: List[str]) -> Optional[List[Dict]]:
+def _parse_multiplication(children, int_var_names: List[str], cache=None) -> Optional[List[Dict]]:
     coeff = 1
     combined_vars = {}
     need_distribution = False
@@ -593,7 +603,7 @@ def _parse_multiplication(children, int_var_names: List[str]) -> Optional[List[D
     result_terms = [{'c': 1, 'vars': {}}]
 
     for child in children:
-        child_terms = _parse_polynomial_expr(child, int_var_names)
+        child_terms = _parse_polynomial_expr(child, int_var_names, cache)
         if child_terms is None:
             return None
 
@@ -607,7 +617,7 @@ def _parse_multiplication(children, int_var_names: List[str]) -> Optional[List[D
                 for v, e in ct['vars'].items():
                     new_term['vars'][v] = new_term['vars'].get(v, 0) + e
                 new_result.append(new_term)
-        result_terms = new_result
+        result_terms = _merge_like_terms(new_result)
 
     return _merge_like_terms(result_terms)
 

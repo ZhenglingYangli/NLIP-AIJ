@@ -5,12 +5,31 @@ __pycache__/
 /codes/build/
 /codes/dist/
 /results/
-/sumup/
 /solvers/
 /benchmarks/mipo/
 jobs/config.cluster.json
 jobs/config.ubuntu.json
 
-# One-off development diagnostics stay on the development machine.
-/tests/check_*.py
+# Development checks and unused experiment routes stay on the server.
+/tests/
+/codes/tests/
 /matrics.env
+
+/codes/baselines/optimization_baselines.py
+/codes/baselines/diverse_baseline.py
+/codes/baselines/run_nlip_sat.py
+/codes/examples/api_example.py
+/benchmarks/smt_candidates.txt
+
+/tmp/
+*.log
+
+# Private operating documentation.
+/MATRICS_GUIDE.md
+/codes/README.md
+/benchmarks/README.md
+
+# Private operating documentation.
+/MATRICS_GUIDE.md
+/codes/README.md
+/benchmarks/README.md

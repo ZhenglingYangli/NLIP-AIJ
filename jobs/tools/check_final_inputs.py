@@ -18,7 +18,7 @@ def main():
     sys.path.insert(0,config['code_root'])
     from nlipsat import load_problem
     jobs=make_jobs(config,'formal','main',['qplib','diverse','mipo','smt'])
-    result={'jobs':len(jobs),'by_family':dict(Counter(j['family'] for j in jobs)), 'inputs':{}, 'factor_block_inputs':0}
+    result={'jobs':len(jobs),'by_family':dict(Counter(j['family'] for j in jobs)), 'inputs':{}}
     seen=set()
     for j in jobs:
         if j['input'] in seen: continue
@@ -30,7 +30,6 @@ def main():
             continue
         with contextlib.redirect_stdout(io.StringIO()):
             p=load_problem(j['input'],k=j.get('k'))
-        if p.get('objective',{}).get('factor_blocks'): result['factor_block_inputs']+=1
         report=result['inputs'].setdefault(j['family'],{'count':0,'degree_counts':{},'nonlinear_constraint_inputs':[]})
         report['count']+=1
         degree=max([sum(t.get('vars',{}).values()) for t in p.get('objective',{}).get('terms',[])]+[0])

@@ -58,7 +58,7 @@ def main():
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[2]
     packages = list(requirements(root / 'jobs/requirements.txt'))
-    packages += list(requirements(root / 'analysis/requirements-analysis.txt'))
+    packages += list(requirements(root / 'sumup/requirements-analysis.txt'))
     print(f'当前 Python：{sys.executable}')
     missing, problems = inspect(packages)
     if missing and args.install_missing:

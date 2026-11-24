@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import math
 import itertools
 from typing import Dict, Any, List, Tuple
 from pysat.formula import WCNF, IDPool
@@ -132,7 +131,6 @@ def encode_polynomial_bin(
     and_cache = external_and_cache if external_and_cache is not None else {}
 
     for t_idx, term in enumerate(terms):
-        _check_deadline(deadline)
         t_prefix = f"{z_prefix}_t{t_idx}"
         z_map, hard, direct = encode_term_bin(
             term, problem, name2idx, vpool, t_prefix, lb_map, for_objective,

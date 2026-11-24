@@ -34,20 +34,6 @@ def git_identity(code, executable='git'):
             'dirty': bool(git('status', '--porcelain', '--', code))}
 
 
-def check_cplex_license(python):
-    probe = """import cplex
-c=cplex.Cplex()
-c.set_results_stream(None); c.set_log_stream(None); c.set_error_stream(None)
-c.variables.add(types='B'*1001)
-c.parameters.threads.set(1); c.parameters.timelimit.set(2)
-try:
-    c.solve()
-except cplex.exceptions.CplexError as exc:
-    raise SystemExit('CPLEX full-size license unavailable: '+str(exc))
-"""
-    checked = subprocess.run([python, '-c', probe], capture_output=True, text=True, timeout=30)
-    if checked.returncode:
-        raise ValueError(checked.stdout + checked.stderr)
 
 
 def resume_compatible(previous, current):
@@ -89,7 +75,7 @@ def run_jobs(config, jobs, *, profile, matrix, workers, output=None, resume=Fals
     if code_version is not None:
         identity = code_version
         execution_identity = runner_version
-    elif profile == 'smoke':
+    elif profile in ('smoke', 'pilot'):
         # Small diagnostics do not require Git on the compute node.
         identity = execution_identity = {'commit': None, 'dirty': None}
     else:
@@ -97,8 +83,6 @@ def run_jobs(config, jobs, *, profile, matrix, workers, output=None, resume=Fals
         execution_identity = git_identity(str(ROOT), config['git'])
     if profile == 'formal' and (identity['dirty'] or execution_identity['dirty']):
         raise ValueError('commit both the active solver and experiment runner code before a formal batch')
-    if any(j['method']['solver'].startswith('CPLEX') for j in jobs):
-        check_cplex_license(config['python'])
     versions = subprocess.check_output([config['python'], '-c',
         "import importlib.metadata as m,json,sys; print(json.dumps({'python':sys.version, **{p:m.version(p) for p in ['python-sat','pindakaas','z3-solver','psutil']}}))"], text=True)
     versions = json.loads(versions)
@@ -109,11 +93,6 @@ def run_jobs(config, jobs, *, profile, matrix, workers, output=None, resume=Fals
     if any(j['method']['solver'] == 'CVC5' for j in jobs):
         versions['cvc5'] = subprocess.check_output([config['python'], '-c',
             'import cvc5; print(cvc5.__version__)'], cwd=ROOT, text=True).strip()
-    for package in ('highspy', 'cplex'):
-        needed_solver = 'HIGHS' if package == 'highspy' else 'CPLEX'
-        if any(j['method']['solver'].startswith(needed_solver) for j in jobs):
-            versions[package] = subprocess.check_output([config['python'], '-c',
-                f'import importlib.metadata as m; print(m.version({package!r}))'], text=True).strip()
     for package, solver in [('ortools', 'CP-SAT'), ('gurobipy', 'GUROBI')]:
         if solver in selected:
             versions[package] = subprocess.check_output([config['python'], '-c',
@@ -211,16 +190,10 @@ with gp.Env(params={'OutputFlag':0}) as env, gp.Model(env=env) as m:
         stop.set()
     finally:
         pool.shutdown(wait=True, cancel_futures=True)
-    subprocess.run([config["python"], str(ROOT.parent / "analysis/summarize.py"), str(output)], check=True)
+    subprocess.run([config["python"], str(ROOT.parent / "sumup/summarize.py"), str(output)], check=True)
     print('Results:', output)
-    if profile == 'smoke':
-        failures = []
-        for job in jobs:
-            path = output / 'jobs' / job['id'] / 'result.json'
-            result = json.loads(path.read_text()) if path.exists() else {}
-            if not result.get('verified') or any(result.get(key) != value for key, value in job['smoke_expected'].items()):
-                failures.append(job['id'])
-        if failures:
-            raise ValueError('small-instance tests failed: ' + ', '.join(failures))
-        print(f'Tests passed: {len(jobs)} (expected answers and original-problem verification)')
+    if profile in ('smoke', 'pilot'):
+        from internal.testing import check_results
+        if not check_results(output, jobs):
+            raise ValueError('test acceptance failed; see ' + str(output / 'test-result.txt'))
     return output

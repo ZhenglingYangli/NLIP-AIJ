@@ -12,7 +12,7 @@ from pysat.examples.rc2 import RC2
 from encoders.encoder_driver import encode_objective, add_domain_constraints, encode_constraints
 from .config import EncodingConfig
 from tools.preprocessing import preprocess_problem, EncodingTimeoutError
-from tools.arithmetic import cost_recovery
+from fractions import Fraction
 from tools.verify import verify_solution
 
 
@@ -100,6 +100,13 @@ def _check_encoding_deadline(cfg, phase_name=""):
             f"Encoding deadline exceeded during {phase_name}")
 
 
+def _write_wcnf(wcnf, path):
+    """Write the classic format consumed by the bundled MaxSAT solvers."""
+    from inspect import signature
+    options = {'format': 'legacy'} if 'format' in signature(wcnf.to_file).parameters else {}
+    wcnf.to_file(path, **options)
+
+
 def _formula_counts(wcnf):
     return {'variables': wcnf.nv, 'hard': len(wcnf.hard), 'soft': len(wcnf.soft),
             'max_weight_bits': max(wcnf.wght, default=0).bit_length(),
@@ -113,15 +120,16 @@ def build_wcnf(problem, encoding, cfg, collect_timings=False):
     if stats.get('skipped') or stats.get('defaulted_bounds'):
         raise ValueError('cannot encode an incomplete or artificially bounded SMT translation')
 
-    # 0. Preprocessing
+    if problem.get('objective', {}).get('factor_blocks'):
+        raise ValueError('the experiment package requires an explicit polynomial objective')
+
+    # Exact normalization is required even when optional optimizations are off.
     t0 = time.time()
-    from tools.lrn_entry import prepare_factors
-    prepared, lrn_meta, lrn_aux = prepare_factors(problem, cfg.use_lrn)
     processed_problem, preprocess_meta = preprocess_problem(
-        prepared, scale_limit=cfg.preprocess_scale_limit,
+        problem, scale_limit=cfg.preprocess_scale_limit,
         enable_integerize=cfg.preprocess_integerize,
-        enable_optimizations=cfg.enable_preprocess, deadline=cfg.encoding_deadline)
-    preprocess_meta['lrn_auxiliaries'] = lrn_aux
+        enable_optimizations=cfg.enable_preprocess,
+        deadline=cfg.encoding_deadline)
     problem = processed_problem
     if collect_timings:
         timings['preprocess'] = time.time() - t0
@@ -167,7 +175,6 @@ def build_wcnf(problem, encoding, cfg, collect_timings=False):
     objective_stats = {**empty_stats, **getattr(wcnf_obj, '_decomposition_stats', {})}
     constraint_stats = {**empty_stats, **getattr(wcnf_cons, '_decomposition_stats', {})}
     wcnf._encoding_stats = {
-        'lrn': lrn_meta,
         'objective_binary_fastpath': getattr(wcnf_obj, '_binary_fastpath', False),
         'decomposition_requested': encoding == 'BIN' and cfg.use_decomposition,
         'decomposition_effective': objective_stats['decomposed_terms'] + constraint_stats['decomposed_terms'] > 0,
@@ -176,7 +183,7 @@ def build_wcnf(problem, encoding, cfg, collect_timings=False):
         'constraints': constraint_stats, 'generated': _formula_counts(wcnf)}
 
     if encoding == 'BIN' and hasattr(cfg, '_global_and_cache'):
-        cache_size = len(cfg._global_and_cache)
+        cache_size = sum(isinstance(key, frozenset) for key in cfg._global_and_cache) + len(cfg._global_and_cache.get('_lin_prod_cache', {}))
         if cache_size > 0:
             print(f"  [global-cache] shared AND-gate cache: {cache_size} gates")
         del cfg._global_and_cache
@@ -274,7 +281,7 @@ def solve_external(wcnf, workdir, solver_path, timeout=0, greedy_cost=None, *, b
     with tempfile.NamedTemporaryFile(suffix='.wcnf', dir=workdir, delete=False) as f:
         wcnf_path = f.name
     try:
-        wcnf.to_file(wcnf_path, format='legacy')
+        _write_wcnf(wcnf, wcnf_path)
         cmd = [solver_path]
         backend = backend or ('MAXHS' if os.path.basename(solver_path).lower().startswith('maxhs') else None)
         if backend == 'MAXHS':
@@ -345,7 +352,6 @@ def solve_external(wcnf, workdir, solver_path, timeout=0, greedy_cost=None, *, b
 
 def build_and_solve(problem, encoding, cfg, solver='RC2', collect_timings=True, output_path=None,
                     *, on_built=None, on_verify=None):
-    """Solve and check the original problem, with optional experiment phase callbacks."""
     t_start = time.time()
 
     # Build WCNF
@@ -360,7 +366,7 @@ def build_and_solve(problem, encoding, cfg, solver='RC2', collect_timings=True, 
         on_built(wcnf, build_timings)
 
     if output_path is not None:
-        wcnf.to_file(output_path, format='legacy')
+        _write_wcnf(wcnf, output_path)
 
     processed_problem = wcnf._processed_problem
 
@@ -394,8 +400,12 @@ def build_and_solve(problem, encoding, cfg, solver='RC2', collect_timings=True, 
     objective_exact = None
     objective_value = None
     if cost >= 0 and ext_solver_status in ('OPTIMAL', 'FEASIBLE'):
-        alpha, beta = cost_recovery(wcnf)
-        objective_exact = alpha * cost + beta
+        shifted = ((total_soft_weight - cost) - getattr(wcnf, '_neg_soft_total', 0)) * wcnf._weight_gcd
+        meta_obj = (wcnf._preprocess_meta or {}).get('objective', {})
+        objective_exact = Fraction(shifted) * Fraction(meta_obj.get('scale_gcd', 1), meta_obj.get('scale_lcm', 1))
+        objective_exact += meta_obj.get('constant_shift', 0)
+        if meta_obj.get('sense_flip', False):
+            objective_exact = -objective_exact
         objective_value = int(objective_exact) if objective_exact.denominator == 1 else float(objective_exact)
 
     total_time = time.time() - t_start
@@ -422,8 +432,12 @@ def build_and_solve(problem, encoding, cfg, solver='RC2', collect_timings=True, 
         'top_weight': wcnf.topw,
         'assignment': assignment,
         'name2idx': name2idx,
-        'vpool': vpool
+        'vpool': vpool,
+        'num_multiplications': getattr(vpool, '_multiplication_count', 0),
+        'multiplication_cache_hits': getattr(vpool, '_multiplication_cache_hits', 0),
+        'decomposition_effective': getattr(vpool, '_multiplication_count', 0) > 0
     }
+
     result['external_command'] = getattr(wcnf, '_external_command', None)
     result['encoding_stats'] = wcnf._encoding_stats
 

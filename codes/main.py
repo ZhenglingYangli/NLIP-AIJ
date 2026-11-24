@@ -11,7 +11,7 @@ if hasattr(sys, 'set_int_max_str_digits'):
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from solver.solve import build_and_solve, build_wcnf, EncodingTimeoutError
+from solver.solve import build_and_solve, build_wcnf, EncodingTimeoutError, _write_wcnf
 from encoders.onehot import _EncodingTimeout
 from solver.config import EncodingConfig, MAINLINE_SOLVER, mainline_config
 from tools.verify import verify_solution, format_verification_report
@@ -137,7 +137,7 @@ def parse_arguments(argv=None):
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python main.py problem.json --preset mainline  # adopted BIN+D + RC2, LRN off
+  python main.py problem.json --preset mainline  # adopted BIN+D + RC2
   python main.py problem.json                    # solve with default settings
   python main.py problem.json -e UNA             # use UNA encoding
   python main.py problem.json -e BIN -s MAXHS    # use BIN encoding + MaxHS solver
@@ -174,7 +174,7 @@ Solvers:
     parser.add_argument(
         "--preset",
         choices=["mainline"],
-        help="mainline: complete BIN+D + RC2, exact shared multiplication, LRN disabled"
+        help="mainline: complete BIN+D + RC2, exact shared multiplication"
     )
 
     parser.add_argument(
@@ -397,7 +397,7 @@ def _run_cli(args):
             if args.verbose:
                 print(f"\nBuilding WCNF ({args.encoding} encoding)...")
             wcnf, name2idx, _vpool = build_wcnf(problem, args.encoding, cfg)
-            wcnf.to_file(args.output, format='legacy')
+            _write_wcnf(wcnf, args.output)
             print(f"WCNF saved to: {args.output}")
             return 0
         # Refresh external solver timeout using the actual remaining wall-clock budget.

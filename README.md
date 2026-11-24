@@ -1,44 +1,31 @@
-# NLIP-AIJ experiment artifact
+# NLIP-AIJ experiments
 
-Read [MATRICS_GUIDE.md](MATRICS_GUIDE.md) for the experiment matrix, fixed solver versions and arguments, installation, submission and result collection. First-time operators start at section 4.
+NLIPSat Toolkit core with Wallace-tree multiplication, current solver adapters and paper experiment statistics. The main matrix contains 1,265 inputs, 58 configurations and 22,220 runs. A separate sharing ablation has two configurations and 1,020 runs.
 
-The main experiment contains **1,265 inputs, 58 configurations and 22,220 runs** across QPLIB, DiverseSAT application models, MIPO and bounded SMT. LRN is disabled. A separate decomposition-sharing ablation contains 1,020 runs.
+## Files
 
-## Layout
+- `codes/`: solver core, encoders, parsers, original-problem verification and baselines.
+- `jobs/`: `generate_scripts.py` generates jobs; `goSolver.py` runs tests and instances.
+- `benchmarks/manifests/`: frozen input lists.
+- `sumup/`: aggregation, plots and compact result export.
+- `matrics.env.example`: site paths and resource settings.
 
-```text
-MATRICS_GUIDE.md        Complete MatriCS operating guide
-matrics.env.example    Paths, modules and license settings to fill in
-jobs/                  Experiment generation and execution
-  generate_scripts.py  Generate the Slurm campaign and submit.sh
-  goSolver.py          Run instances and supervise resources
-  internal/            Shared matrix, scheduling and solver dispatch
-  tools/               Site configuration and environment checks
-  data/                MIPO input preparation
-  smoke/               Four small models with known answers
-codes/                 Installable NLIPSat package and core tests
-benchmarks/manifests/   Fixed instance lists
-analysis/              Result aggregation, plots and export
-tests/                 Experiment runner and analysis tests
-```
-
-## Run on MatriCS
-
-Follow the guide to copy and edit `matrics.env.example`, install the solvers and generate `jobs/config.cluster.json`. Then, from the project root:
+Install the fixed software and configure site paths using the separately supplied `MATRICS_GUIDE.md`. Then use the existing entry points:
 
 ```bash
 source matrics.env
-"$AIJ_PYTHON" jobs/generate_scripts.py --profile smoke --output results/smoke-new-solvers
-bash results/smoke-new-solvers/submit.sh
+"$AIJ_PYTHON" jobs/tools/configure_cluster.py
+"$AIJ_PYTHON" jobs/goSolver.py pilot
+"$AIJ_PYTHON" jobs/generate_scripts.py --output results/main
+bash results/main/submit.sh
 ```
 
-After the compute-node checks and all 58 small-test configurations pass:
+The pilot selects four formal inputs, runs all 58 main configurations and both ablations, and prints `TEST PASSED` or `TEST FAILED` with details. Formal runs use 60 single-core workers per exclusive node, 16 GiB per instance, 970G per job and at most two simultaneous configuration jobs. Solve time is 3,600 seconds, verification 120 seconds, and the outer cap 4,000 seconds.
+
+After the campaign:
 
 ```bash
-"$AIJ_PYTHON" jobs/generate_scripts.py --output results/main-new-solvers
-bash results/main-new-solvers/submit.sh
+"$AIJ_PYTHON" sumup/export_results.py --campaign results/main --summarize --push
 ```
 
-The generated submission script saves job IDs and schedules analysis after the array finishes. Raw records and summary tables are written under `results/<campaign>/`. Local configuration, environments, external solver binaries, full datasets, licenses and results are excluded from Git.
-
-For individual models and the Python API, see [codes/README.md](codes/README.md).
+Only four analysis files are committed under `experiment-results/`. Full logs, witnesses, data, binaries, licenses, environments and development tests remain outside Git. The four bundled smoke inputs and automated pilot are included.

@@ -9,9 +9,9 @@ import subprocess
 from internal.experiment import ROOT, configuration_tasks, default_config, load_config, make_jobs
 from internal.runner import git_identity
 
-PARALLEL_NUM = 60
-PARTITION = 'bigmem-amd'
-CONCURRENT_JOBS = 1
+PARALLEL_NUM = int(os.environ.get('NLIP_WORKERS', '60'))
+PARTITION = os.environ.get('NLIP_PARTITION', 'bigmem-amd')
+CONCURRENT_JOBS = int(os.environ.get('NLIP_CONCURRENT_JOBS', '2'))
 
 PARTITION_LIMITS = {
     'normal': (28, 125, 360, 4),
@@ -36,7 +36,7 @@ def write_submission(plan, output, wall_hours):
         command.insert(1, '--exclusive')
     analysis = [
         '--parsable', f'--output={output}/analysis-%j.log', exports,
-        str(ROOT.parent / 'analysis/run_campaign_analysis.sh'),
+        str(ROOT.parent / 'sumup/run_campaign_analysis.sh'),
     ]
     check = [str(ROOT / 'goSolver.py'),
              '--campaign', str(output), '--check-code']
@@ -82,6 +82,8 @@ def main():
         a.output=ROOT.parent/'results'/name
     config=load_config(a.config)
     subprocess.run([config['python'], str(ROOT / 'tools/check_environment.py')], check=True)
+    if a.memory_gib is None and a.profile == 'formal' and os.environ.get('NLIP_JOB_MEMORY_GIB'):
+        a.memory_gib = int(os.environ['NLIP_JOB_MEMORY_GIB'])
     if a.memory_gib is None:
         a.memory_gib=ceil((a.workers*config['profiles'][a.profile]['memory_gib']+.5)/10)*10
     cores_max,memory_max,time_max,concurrent_max=PARTITION_LIMITS[a.partition]
@@ -107,6 +109,12 @@ def main():
     wall_hours=ceil(worst/3600)+2
     if wall_hours>time_max:
         raise ValueError(f'configuration exceeds the {time_max}-hour job limit on {a.partition}; increase workers')
+    durations = [ceil(len(t['job_ids'])/a.workers)*limits['outer_seconds'] for t in tasks]
+    lanes = [0] * a.concurrent_jobs
+    for seconds in sorted(durations, reverse=True):
+        lane = lanes.index(min(lanes))
+        lanes[lane] += seconds
+    print(f'All runs at outer cap, excluding queue/IO: about {max(lanes)/3600:.1f} hours ({max(lanes)/86400:.2f} days)')
     plan={'config':str(Path(a.config).resolve()),'profile':a.profile,'matrix':a.matrix,
           'partition':a.partition,'workers':a.workers,'concurrent_jobs':a.concurrent_jobs,'memory_gib':a.memory_gib,
           'configuration_jobs':len(tasks),'instance_runs':sum(len(t['job_ids']) for t in tasks),'tasks':tasks}

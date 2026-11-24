@@ -1,9 +1,22 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Tuple, Iterator
 
-from .dimacs import iter_dimacs_ints
+
+def _iter_dimacs_ints(lines: Iterator[str]) -> Iterator[int]:
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith('c'):
+            continue
+        if line.startswith('p'):
+            # header handled elsewhere
+            continue
+        for tok in line.split():
+            try:
+                yield int(tok)
+            except Exception:
+                continue
 
 
 def parse_cnf_file(filepath: str) -> Dict[str, Any]:
@@ -25,7 +38,7 @@ def parse_cnf_file(filepath: str) -> Dict[str, Any]:
                     n_vars = None
             break
 
-    ints = iter_dimacs_ints(iter(raw_lines))
+    ints = _iter_dimacs_ints(iter(raw_lines))
     cur: List[int] = []
     for v in ints:
         if v == 0:
@@ -44,9 +57,6 @@ def parse_cnf_file(filepath: str) -> Dict[str, Any]:
             for lit in c:
                 n_vars = max(n_vars, abs(int(lit)))
 
-    # Guard: empty CNF is trivially SAT
-    if n_vars <= 0:
-        n_vars = 1
 
     variables: Dict[str, Dict[str, Any]] = {
         f'x{i}': {'lb': 0, 'ub': 1} for i in range(1, n_vars + 1)
@@ -55,11 +65,9 @@ def parse_cnf_file(filepath: str) -> Dict[str, Any]:
     constraints: List[Dict[str, Any]] = []
     for c in clauses:
         if not c:
-            # Empty clause => UNSAT. Encode via an impossible constraint on x1 (binary).
+            # An empty clause is false even when there are no variables.
             constraints.append({
-                'terms': [{'c': 1, 'vars': {'x1': 1}}],
-                'rel': '>=',
-                'rhs': 2,
+                'terms': [], 'rel': '>=', 'rhs': 1,
             })
             continue
 
@@ -91,3 +99,4 @@ def parse_cnf_file(filepath: str) -> Dict[str, Any]:
         'constraints': constraints,
     }
     return problem
+

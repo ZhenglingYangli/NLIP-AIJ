@@ -3,9 +3,21 @@
 from __future__ import annotations
 
 from itertools import combinations
-from typing import Any, Dict, List
+from typing import Any, Dict, Iterator, List
 
-from .dimacs import iter_dimacs_ints
+
+def _iter_dimacs_ints(lines: Iterator[str]) -> Iterator[int]:
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith('c'):
+            continue
+        if line.startswith('p'):
+            continue
+        for tok in line.split():
+            try:
+                yield int(tok)
+            except Exception:
+                continue
 
 
 def _parse_cnf_raw(filepath: str):
@@ -27,7 +39,7 @@ def _parse_cnf_raw(filepath: str):
             break
 
     cur: List[int] = []
-    for v in iter_dimacs_ints(iter(raw_lines)):
+    for v in _iter_dimacs_ints(iter(raw_lines)):
         if v == 0:
             clauses.append(cur)
             cur = []
@@ -38,8 +50,6 @@ def _parse_cnf_raw(filepath: str):
 
     if n_vars is None:
         n_vars = max((abs(lit) for c in clauses for lit in c), default=0)
-    if n_vars <= 0:
-        n_vars = 1
 
     return n_vars, clauses
 
@@ -66,9 +76,7 @@ def parse_diversesat(filepath: str, k: int) -> Dict[str, Any]:
         if not clause:
             for m in range(1, k + 1):
                 constraints.append({
-                    'terms': [{'c': 1, 'vars': {vname(1, m): 1}}],
-                    'rel': '>=',
-                    'rhs': 2,
+                    'terms': [], 'rel': '>=', 'rhs': 1,
                 })
             continue
 
