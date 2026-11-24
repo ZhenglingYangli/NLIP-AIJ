@@ -194,7 +194,10 @@ Python 基线通过 `jobs/config.cluster.json` 的 `python` 启动，每个实�
 │   ├── nlipsat/                 对外 Python API
 │   ├── baselines/         SCIP、Z3、CP-SAT、Gurobi、cvc5 适配
 │   └── tests/                   求解核心与接口测试
-├── benchmarks/manifests/        正式实例清单
+├── benchmarks/
+│   ├── manifests/              四个正式实例清单
+│   ├── smt_candidates.txt      SMT 原始候选名单，供查阅
+│   └── README.md               清单说明与 SMT 筛选记录
 ├── analysis/                    汇总、统计表、图和结果导出
 ├── tests/                       实验运行、资源限制和统计测试
 └── results/                     本机产生的日志和结果，不进源码提交

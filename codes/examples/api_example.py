@@ -1,6 +1,10 @@
+from pathlib import Path
+import sys
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from nlipsat import load_problem, EncodingConfig, build_wcnf, solve, verify_solution
 
-problem = load_problem("examples/example4.json")  # .qplib .smt2 .cnf also accepted
+problem = load_problem(Path(__file__).with_name("example4.json"))  # .qplib .smt2 .cnf also accepted
 cfg = EncodingConfig()  # use_decomposition=True for order decomp
 
 wcnf, name2idx, vpool = build_wcnf(problem, "BIN", cfg)

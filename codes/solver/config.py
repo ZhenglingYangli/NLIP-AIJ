@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
-_SOLVER_DIR = str(_PROJECT_ROOT.parent / "solvers" / "current")
+_SOLVER_DIR = str(Path(os.environ.get("NLIP_SOFTWARE", _PROJECT_ROOT.parent / "solvers" / "matrics-20261124")) / "bin")
 
 
 @dataclass
@@ -68,10 +68,10 @@ class EncodingConfig:
     workdir: str = os.environ.get("NLIP_WORKDIR", tempfile.gettempdir())
 
     maxhs_path: str = os.environ.get("NLIP_MAXHS", os.path.join(_SOLVER_DIR, "maxhs"))
-    wmaxcdcl_path: str = os.environ.get("NLIP_WMAXCDCL", os.path.join(_SOLVER_DIR, "wmaxcdcl"))
+    wmaxcdcl_path: str = os.environ.get("NLIP_WMAXCDCL", os.path.join(_SOLVER_DIR, "wmaxcdcl_static"))
     openwbo_path: str = os.environ.get("NLIP_OPENWBO", os.path.join(_SOLVER_DIR, "openwbo"))
     uwrmaxsat_path: str = os.environ.get("NLIP_UWRMAXSAT", os.path.join(_SOLVER_DIR, "uwrmaxsat"))
-    evalmaxres_path: str = os.environ.get("NLIP_EVALMAXRES", os.path.join(_SOLVER_DIR, "evalmaxres"))
+    evalmaxres_path: str = os.environ.get("NLIP_EVALMAXRES", os.path.join(_SOLVER_DIR, "EvalMaxSAT"))
     external_solver_args: dict = field(default_factory=dict)
     external_solver_timeout: int = 0
 

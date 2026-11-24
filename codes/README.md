@@ -14,6 +14,8 @@ This directory contains the installable NLIPSat solver and its Python API. For t
 - `tests/` contains core correctness and interface tests.
 - `pyproject.toml` defines the installable package.
 
+The formal baseline adapters are `integer_baselines.py`, `scip_baseline.py`, `run_z3.py` and `cvc5_baseline.py`. Other baseline routes and `tools/lrn*.py` remain available for interface and regression checks; the current experiment matrix does not select them.
+
 ## Run one model
 
 After setting up the project environment, execute from the repository root:

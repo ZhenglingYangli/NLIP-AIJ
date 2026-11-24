@@ -1,2 +1,2 @@
-# Plotting runs separately from solver workers; compatible with Python 3.9.
+# Plotting dependency for the Python 3.12 experiment environment.
 matplotlib==3.9.4

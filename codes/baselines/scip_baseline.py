@@ -1,13 +1,9 @@
 """Independent exact Boolean-product MILP and native polynomial SCIP models."""
 from functools import reduce
 from math import ceil, floor, gcd
-from pathlib import Path
-import sys
 import time
 from tools.arithmetic import number, integer_polynomial, integer_polynomial_interval, exact_double_integer
 
-# Prefer the active interpreter's packages over a legacy --target installation.
-sys.path.append(str(Path(__file__).with_name('baseline-deps')))
 from pyscipopt import Model, quicksum
 import pyscipopt
 

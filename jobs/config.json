@@ -1,14 +1,14 @@
 {
   "code_root": "../codes",
   "python": "../.venv-solvers/bin/python",
-  "benchmark_root": "/scratch/scherif/NLIP/NLIP/benchmarks",
+  "benchmark_root": "/CHANGE_ME/benchmarks",
   "manifest_root": "../benchmarks/manifests",
   "solver_paths": {
-    "MAXHS": "../solvers/current/maxhs",
-    "WMAXCDCL": "../solvers/current/wmaxcdcl",
-    "UWRMAXSAT": "../solvers/current/uwrmaxsat",
-    "EVALMAXRES": "../solvers/current/evalmaxres",
-    "CADICAL": "../solvers/current/cadical"
+    "MAXHS": "../solvers/matrics-20261124/bin/maxhs",
+    "WMAXCDCL": "../solvers/matrics-20261124/bin/wmaxcdcl_static",
+    "UWRMAXSAT": "../solvers/matrics-20261124/bin/uwrmaxsat",
+    "EVALMAXRES": "../solvers/matrics-20261124/bin/EvalMaxSAT",
+    "CADICAL": "../solvers/matrics-20261124/bin/cadical"
   },
   "profiles": {
     "smoke": {

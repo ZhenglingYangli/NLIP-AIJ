@@ -23,17 +23,17 @@ def main():
     destination = ROOT / 'config.cluster.json'
     source = destination if destination.exists() else ROOT / 'config.json'
     config = json.loads(source.read_text())
-    legacy = os.environ.get('NLIP_LEGACY_ROOT', '/scratch/scherif/NLIP/NLIP')
+    software = Path(os.environ.get('NLIP_SOFTWARE', ROOT.parent / 'solvers/matrics-20261124'))
     # Keep the selected virtual-environment path: resolving its symlink would
     # replace .venv/bin/python with the system interpreter outside that venv.
     config['python'] = os.path.abspath(os.environ.get('AIJ_PYTHON') or sys.executable)
     config['git'] = select('Git executable', [os.environ.get('AIJ_GIT'), shutil.which('git')], True)
     config['benchmark_root'] = select('NLIP_BENCHMARK_ROOT', [os.environ.get('NLIP_BENCHMARK_ROOT'),
-        ROOT / config['benchmark_root'], legacy + '/benchmarks'])
-    for key, name in [('MAXHS', 'maxhs'), ('WMAXCDCL', 'wmaxcdcl'), ('UWRMAXSAT', 'uwrmaxsat'), ('EVALMAXRES', 'evalmaxres'), ('CADICAL', 'cadical')]:
+        ROOT / config['benchmark_root']])
+    for key, name in [('MAXHS', 'maxhs'), ('WMAXCDCL', 'wmaxcdcl_static'), ('UWRMAXSAT', 'uwrmaxsat'), ('EVALMAXRES', 'EvalMaxSAT'), ('CADICAL', 'cadical')]:
         config['solver_paths'][key] = select('NLIP_' + key, [os.environ.get('NLIP_' + key),
-            ROOT / config['solver_paths'].get(key, '../solvers/current/' + name),
-            str(ROOT.parent / 'solvers/current' / name)], True)
+            ROOT / config['solver_paths'][key] if config['solver_paths'].get(key) else None,
+            software / 'bin' / name], True)
     arguments = config.setdefault('external_solver_args', {})
     arguments.setdefault('MAXHS', ['-optimizer=scip', '-no-lp-harden-reduced'])
     arguments.setdefault('UWRMAXSAT', ['-no-bin', '-no-sat', '-no-par', '-maxpre-time=60',
@@ -41,7 +41,7 @@ def main():
     if 'EVALMAXRES' not in arguments:
         helper = select('NLIP_EVALMAXRES_HELPER', [os.environ.get('NLIP_EVALMAXRES_HELPER'),
             Path(config['solver_paths']['EVALMAXRES']).parent / 'nuwls',
-            ROOT.parent / 'solvers/current/nuwls'], True)
+            software / 'bin/nuwls'], True)
         arguments['EVALMAXRES'] = ['--noSaveCores', '--noSimplify', '--path_anytime_solver', helper]
     # An explicit replacement helper must also update an existing site config.
     if os.environ.get('NLIP_EVALMAXRES_HELPER') and 'EVALMAXRES' in arguments:

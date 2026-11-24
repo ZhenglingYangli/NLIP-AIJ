@@ -1,12 +1,8 @@
 """Native SMT decision and bounded exact-integer bisection optimization."""
 from fractions import Fraction
 from math import ceil, floor, lcm
-from pathlib import Path
-import sys
 import time
 
-# Prefer the active interpreter's packages over a legacy --target installation.
-sys.path.append(str(Path(__file__).with_name('baseline-deps')))
 import cvc5
 from cvc5 import Kind as K
 from tools.arithmetic import polynomial_interval as objective_interval
