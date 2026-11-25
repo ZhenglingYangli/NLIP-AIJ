@@ -10,7 +10,7 @@ NLIPSat Toolkit core with Wallace-tree multiplication, current solver adapters a
 - `sumup/`: aggregation, plots and compact result export.
 - `matrics.env.example`: site paths and resource settings.
 
-Install the fixed software and configure site paths using the separately supplied `MATRICS_GUIDE.md`. Then use the existing entry points:
+Keep external solvers under `/users/scherif/ComputeSpace/solvers/`. Reuse existing binaries when their version and build mode match the experiment requirements. Install only missing versions in the `nlip-20261124/` subdirectory. Set each binary path in `matrics.env`, then regenerate `jobs/config.cluster.json`. Follow the separately supplied `NLIP_GUIDE.md` for version checks and installation steps. Then use the existing entry points:
 
 ```bash
 source matrics.env

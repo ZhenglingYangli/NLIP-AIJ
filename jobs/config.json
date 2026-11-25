@@ -4,11 +4,11 @@
   "benchmark_root": "/CHANGE_ME/benchmarks",
   "manifest_root": "../benchmarks/manifests",
   "solver_paths": {
-    "MAXHS": "../solvers/matrics-20261124/bin/maxhs",
-    "WMAXCDCL": "../solvers/matrics-20261124/bin/wmaxcdcl_static",
-    "UWRMAXSAT": "../solvers/matrics-20261124/bin/uwrmaxsat",
-    "EVALMAXRES": "../solvers/matrics-20261124/bin/EvalMaxSAT",
-    "CADICAL": "../solvers/matrics-20261124/bin/cadical"
+    "MAXHS": "/users/scherif/ComputeSpace/solvers/nlip-20261124/bin/maxhs",
+    "WMAXCDCL": "/users/scherif/ComputeSpace/solvers/nlip-20261124/bin/wmaxcdcl_static",
+    "UWRMAXSAT": "/users/scherif/ComputeSpace/solvers/nlip-20261124/bin/uwrmaxsat",
+    "EVALMAXRES": "/users/scherif/ComputeSpace/solvers/nlip-20261124/bin/EvalMaxSAT",
+    "CADICAL": "/users/scherif/ComputeSpace/solvers/nlip-20261124/bin/cadical"
   },
   "profiles": {
     "smoke": {

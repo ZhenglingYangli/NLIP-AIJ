@@ -2,15 +2,9 @@ import os
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from pathlib import Path
 
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-_SOLVER_DIR = str(_PROJECT_ROOT / "solvers" / "maxsat")
-
-
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent
-_SOLVER_DIR = str(Path(os.environ.get("NLIP_SOFTWARE", _PROJECT_ROOT.parent / "solvers" / "matrics-20261124")) / "bin")
-
+_SOLVER_DIR = str(Path(os.environ.get("NLIP_SOFTWARE",
+    "/users/scherif/ComputeSpace/solvers/nlip-20261124")) / "bin")
 
 @dataclass
 class EncodingConfig:
