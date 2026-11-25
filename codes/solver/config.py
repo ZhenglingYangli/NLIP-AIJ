@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 _SOLVER_DIR = str(Path(os.environ.get("NLIP_SOFTWARE",
-    "/users/scherif/ComputeSpace/solvers/nlip-20261124")) / "bin")
+    "/users/scherif/ComputeSpace/solvers")) / "bin")
 
 @dataclass
 class EncodingConfig:

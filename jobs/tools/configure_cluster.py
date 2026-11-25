@@ -23,7 +23,7 @@ def main():
     destination = ROOT / 'config.cluster.json'
     source = destination if destination.exists() else ROOT / 'config.json'
     config = json.loads(source.read_text())
-    software = Path(os.environ.get('NLIP_SOFTWARE', '/users/scherif/ComputeSpace/solvers/nlip-20261124'))
+    software = Path(os.environ.get('NLIP_SOFTWARE', '/users/scherif/ComputeSpace/solvers'))
     # Keep the selected virtual-environment path: resolving its symlink would
     # replace .venv/bin/python with the system interpreter outside that venv.
     config['python'] = os.path.abspath(os.environ.get('AIJ_PYTHON') or sys.executable)
